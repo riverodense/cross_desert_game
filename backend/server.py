@@ -9,7 +9,9 @@ app = Flask(__name__)
 CORS(app)
 
 ROOT = Path(__file__).resolve().parents[1]
-ADJ = json.loads((ROOT / "adjacency.json").read_text())
+# Use UTF-8-SIG so a BOM at the start doesn’t break JSON parsing
+with open(ROOT / "adjacency.json", "r", encoding="utf-8-sig") as f:
+    ADJ = json.load(f)
 NEI = {int(k): v for k, v in ADJ.items()}
 
 @app.post("/api/solve")
