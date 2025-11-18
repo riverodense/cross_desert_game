@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pathlib import Path

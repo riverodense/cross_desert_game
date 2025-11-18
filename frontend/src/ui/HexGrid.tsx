@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+﻿import React, { useMemo } from "react";
 import type { CellType } from "../types";
 
 const SIZE = 26;

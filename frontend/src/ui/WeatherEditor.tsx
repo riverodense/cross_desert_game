@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import type { Weather } from "../types";
 
 const OPTIONS: Weather[] = ["Sunny","Hot","Storm"];

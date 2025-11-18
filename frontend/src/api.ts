@@ -1,4 +1,4 @@
-import type { SolveRequest, SolveResponse } from "./types";
+﻿import type { SolveRequest, SolveResponse } from "./types";
 
 export async function solve(req: SolveRequest): Promise<SolveResponse>{
   const res = await fetch("/api/solve", {

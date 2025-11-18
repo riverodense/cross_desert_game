@@ -1,4 +1,4 @@
-export type Weather = "Sunny" | "Hot" | "Storm";
+﻿export type Weather = "Sunny" | "Hot" | "Storm";
 export type CellType = "Desert" | "Village" | "Mine";
 
 export interface DayWeather { day:number; weather:Weather; }

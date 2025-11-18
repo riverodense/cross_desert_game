@@ -1,4 +1,4 @@
-export const ADJ: Record<number, number[]> = {
+﻿export const ADJ: Record<number, number[]> = {
   "1":[2,9],
   "2":[3,1,9,10],
   "3":[4,2,10,11],
