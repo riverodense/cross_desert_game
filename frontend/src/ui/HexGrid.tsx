@@ -23,7 +23,8 @@ export const HexGrid: React.FC<{
   labels: Record<number, CellType>;
   setLabel: (id:number, next:CellType)=>void;
   path?: number[];
-}> = ({ labels, setLabel, path = [] }) => {
+  overlays?: any; // Optional overlays for controller view
+}> = ({ labels, setLabel, path = [], overlays }) => {
   const hexes = useMemo(()=>{
     const arr:{id:number,q:number,r:number}[] = [];
     for (let r=0;r<8;r++) for (let q=0;q<8;q++) arr.push({id:r*8+q+1,q,r});
