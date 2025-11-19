@@ -4,6 +4,7 @@ import { resolve } from "path";
 
 export default defineConfig({
   plugins: [react()],
+  root: "frontend",
   server: {
     port: 5173,
     proxy: {
