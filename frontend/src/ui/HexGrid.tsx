@@ -23,13 +23,16 @@ export const HexGrid: React.FC<{
   labels: Record<number, CellType>;
   setLabel: (id:number, next:CellType)=>void;
   path?: number[];
-}> = ({ labels, setLabel, path = [] }) => {
+  solutionPath?: number[];
+  solutionDays?: Record<number, number>;
+}> = ({ labels, setLabel, path = [], solutionPath = [], solutionDays = {} }) => {
   const hexes = useMemo(()=>{
     const arr:{id:number,q:number,r:number}[] = [];
     for (let r=0;r<8;r++) for (let q=0;q<8;q++) arr.push({id:r*8+q+1,q,r});
     return arr;
   },[]);
   const pathSet = new Set(path);
+  const solutionSet = new Set(solutionPath);
 
   function nextLabel(current:CellType, ev:React.MouseEvent){
     if ((ev as any).altKey || (ev as any).metaKey) return "Mine";
@@ -44,6 +47,7 @@ export const HexGrid: React.FC<{
         const pts = polygonPoints(x,y,SIZE);
         const isStart = h.id===1, isEnd = h.id===64;
         const inPath = pathSet.has(h.id);
+        const inSolution = solutionSet.has(h.id);
         const type = labels[h.id] || "Desert";
         const fill = isStart? "#dcedc8" : isEnd? "#ffcdd2" : inPath? "#fff3cd" : "#fff";
         const stroke = type==="Mine" ? "#6a1b9a" : type==="Village" ? "#1e88e5" : "#2c3e50";
@@ -60,9 +64,13 @@ export const HexGrid: React.FC<{
                 setLabel(h.id, nl);
               }}
             />
+            {inSolution && <polygon points={pts} fill="rgba(255,0,0,0.3)" stroke="red" strokeWidth={2} pointerEvents="none" />}
             <text x={x} y={y+5} fontSize={11} textAnchor="middle" fill="#333">{h.id}</text>
             {type==="Mine" && <circle cx={x-12} cy={y-14} r={6} fill="#6a1b9a" />}
             {type==="Village" && <rect x={x+6} y={y-20} width={10} height={10} fill="#1e88e5" />}
+            {inSolution && solutionDays[h.id] !== undefined && (
+              <text x={x} y={y-12} fontSize={10} textAnchor="middle" fill="red" fontWeight="bold">D{solutionDays[h.id]}</text>
+            )}
           </g>
         );
       })}
