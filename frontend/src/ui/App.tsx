@@ -3,7 +3,7 @@ import { HexGrid } from "./HexGrid";
 import { WeatherEditor } from "./WeatherEditor";
 import { PlayerPanel } from "./PlayerPanel";
 import { solve } from "../api";
-import type { CellType, SolveRequest, Weather, SolveResponse } from "../types";
+import type { CellType, SolveRequest, Weather, SolveResponse, OptimalSolution } from "../types";
 
 const defaultWeather: Weather[] = Array.from({length:30},()=> "Sunny");
 
@@ -16,12 +16,13 @@ export const App: React.FC = () => {
 
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SolveResponse | null>(null);
+  const [optimalSolution, setOptimalSolution] = useState<OptimalSolution | null>(null);
   const [playerSolution, setPlayerSolution] = useState<SolveResponse | null>(null);
 
   function setLabel(id:number, next:CellType){ setLabels(prev => ({...prev, [id]: next})); }
 
   async function onSolve(){
-    setBusy(true); setResult(null);
+    setBusy(true); setResult(null); setOptimalSolution(null);
     const req: SolveRequest = {
       deadline: 30,
       initial_cash: 10000,
@@ -39,7 +40,18 @@ export const App: React.FC = () => {
       villages,
       weather
     };
-    try{ const res = await solve(req); setResult(res); }
+    try{ 
+      const res = await solve(req); 
+      setResult(res);
+      // Store as optimal solution for comparison
+      setOptimalSolution({
+        daily: res.daily,
+        purchases: res.purchases,
+        path: res.path,
+        final_cash: res.final_cash,
+        generated_at: Date.now()
+      });
+    }
     catch(err:any){ alert(err.message); }
     finally{ setBusy(false); }
   }
@@ -97,11 +109,15 @@ export const App: React.FC = () => {
         </>)}
       </div>
 
-      <PlayerPanel 
-        playerSolution={playerSolution}
-        optimalSolution={result}
-        weather={weather}
-      />
+      {/* Player Panel - shows when optimal solution is available */}
+      {optimalSolution && result && (
+        <PlayerPanel
+          optimalSolution={optimalSolution}
+          playerDaily={result.daily}
+          playerSolution={playerSolution}
+          weather={weather}
+        />
+      )}
     </div>
   );
 };

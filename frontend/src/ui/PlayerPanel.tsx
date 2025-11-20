@@ -1,139 +1,87 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
-import { LineChart, DataSeries } from "./LineChart";
-import type { SolveResponse, Weather } from "../types";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import type { OptimalSolution, DailyRecord } from "../types";
 
 interface PlayerPanelProps {
-  playerSolution: SolveResponse | null;
-  optimalSolution: SolveResponse | null;
-  weather: Weather[];
+  optimalSolution: OptimalSolution | null;
+  playerDaily: DailyRecord[];
+  onPlayerDailyChange?: (daily: DailyRecord[]) => void;
 }
 
-interface AnalyticsData {
-  cashDiff: number[];
-  waterDiff: number[];
-  foodDiff: number[];
-  cumulativeCashDiff: number[];
+interface DiffData {
+  day: number;
+  diff_cash: number;
+  diff_invW: number;
+  diff_invF: number;
+  player_mine: boolean;
+  optimal_mine: boolean;
 }
 
 export const PlayerPanel: React.FC<PlayerPanelProps> = ({
-  playerSolution,
   optimalSolution,
-  weather
+  playerDaily,
+  onPlayerDailyChange
 }) => {
-  const [showCashDiff, setShowCashDiff] = useState(true);
-  const [showWaterDiff, setShowWaterDiff] = useState(true);
-  const [showFoodDiff, setShowFoodDiff] = useState(true);
-  const [showCumulativeCash, setShowCumulativeCash] = useState(false);
-  const [debouncedToggles, setDebouncedToggles] = useState({
-    cashDiff: true,
-    waterDiff: true,
-    foodDiff: true,
-    cumulativeCash: false
-  });
+  const [showCashChart, setShowCashChart] = useState(true);
+  const [showWaterChart, setShowWaterChart] = useState(true);
+  const [showFoodChart, setShowFoodChart] = useState(true);
 
-  // Debounce toggle updates to avoid recalculating too frequently
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      setDebouncedToggles({
-        cashDiff: showCashDiff,
-        waterDiff: showWaterDiff,
-        foodDiff: showFoodDiff,
-        cumulativeCash: showCumulativeCash
+  // Compute differences with debouncing
+  const diffData = useMemo(() => {
+    if (!optimalSolution || playerDaily.length === 0) return [];
+
+    const minLen = Math.min(playerDaily.length, optimalSolution.daily.length);
+    const diffs: DiffData[] = [];
+
+    for (let i = 0; i < minLen; i++) {
+      const player = playerDaily[i];
+      const optimal = optimalSolution.daily[i];
+      
+      diffs.push({
+        day: player.day,
+        diff_cash: player.cash - optimal.cash,
+        diff_invW: player.invW - optimal.invW,
+        diff_invF: player.invF - optimal.invF,
+        player_mine: player.action === "MINE",
+        optimal_mine: optimal.action === "MINE"
       });
-    }, 250);
-
-    return () => clearTimeout(timeoutId);
-  }, [showCashDiff, showWaterDiff, showFoodDiff, showCumulativeCash]);
-
-  // Calculate analytics data
-  const analyticsData = useMemo<AnalyticsData | null>(() => {
-    if (!playerSolution || !optimalSolution) return null;
-
-    const minLength = Math.min(playerSolution.daily.length, optimalSolution.daily.length);
-    const cashDiff: number[] = [];
-    const waterDiff: number[] = [];
-    const foodDiff: number[] = [];
-    const cumulativeCashDiff: number[] = [];
-    let cumulativeSum = 0;
-
-    for (let i = 0; i < minLength; i++) {
-      const pDay = playerSolution.daily[i];
-      const oDay = optimalSolution.daily[i];
-
-      const cDiff = pDay.cash - oDay.cash;
-      const wDiff = pDay.invW - oDay.invW;
-      const fDiff = pDay.invF - oDay.invF;
-
-      cashDiff.push(cDiff);
-      waterDiff.push(wDiff);
-      foodDiff.push(fDiff);
-
-      cumulativeSum += cDiff;
-      cumulativeCashDiff.push(cumulativeSum);
     }
 
-    return { cashDiff, waterDiff, foodDiff, cumulativeCashDiff };
-  }, [playerSolution, optimalSolution]);
+    return diffs;
+  }, [optimalSolution, playerDaily]);
 
-  // Prepare chart series
-  const chartSeries = useMemo<DataSeries[]>(() => {
-    if (!analyticsData) return [];
+  // Calculate mining statistics
+  const miningStats = useMemo(() => {
+    const playerMineDays = diffData.filter(d => d.player_mine).length;
+    const optimalMineDays = diffData.filter(d => d.optimal_mine).length;
+    return {
+      playerMineDays,
+      optimalMineDays,
+      difference: playerMineDays - optimalMineDays
+    };
+  }, [diffData]);
 
-    return [
-      {
-        name: "现金差",
-        color: "#1976d2",
-        data: analyticsData.cashDiff,
-        style: "solid" as const,
-        visible: debouncedToggles.cashDiff
-      },
-      {
-        name: "水差",
-        color: "#2e7d32",
-        data: analyticsData.waterDiff,
-        style: "solid" as const,
-        visible: debouncedToggles.waterDiff
-      },
-      {
-        name: "食物差",
-        color: "#ef6c00",
-        data: analyticsData.foodDiff,
-        style: "solid" as const,
-        visible: debouncedToggles.foodDiff
-      },
-      {
-        name: "累计现金差",
-        color: "#6a1b9a",
-        data: analyticsData.cumulativeCashDiff,
-        style: "dashed" as const,
-        visible: debouncedToggles.cumulativeCash
-      }
-    ];
-  }, [analyticsData, debouncedToggles]);
+  // Calculate gap percentage
+  const gapPercentage = useMemo(() => {
+    if (!optimalSolution || playerDaily.length === 0) return null;
+    
+    const playerFinalCash = playerDaily[playerDaily.length - 1]?.cash ?? 0;
+    const optimalFinalCash = optimalSolution.final_cash;
+    
+    if (optimalFinalCash === 0) return null;
+    
+    const gap = ((optimalFinalCash - playerFinalCash) / optimalFinalCash) * 100;
+    return gap;
+  }, [optimalSolution, playerDaily]);
 
-  // Export CSV
+  // CSV Export
   const handleExportCSV = useCallback(() => {
-    if (!playerSolution || !optimalSolution || !analyticsData) return;
+    if (!optimalSolution || playerDaily.length === 0) return;
 
-    const minLength = Math.min(playerSolution.daily.length, optimalSolution.daily.length);
-    const lines: string[] = [];
-
-    // Add metadata as first line
-    const timestamp = new Date().toISOString();
-    lines.push(`# optimal_generated_at=${timestamp}`);
-
-    // Add header
-    lines.push([
+    const headers = [
       "day",
-      "weather",
-      "player_location",
-      "optimal_location",
-      "player_action",
-      "optimal_action",
       "player_cash",
       "optimal_cash",
       "diff_cash",
-      "cumulative_diff_cash",
       "player_invW",
       "optimal_invW",
       "diff_invW",
@@ -142,150 +90,255 @@ export const PlayerPanel: React.FC<PlayerPanelProps> = ({
       "diff_invF",
       "player_mine",
       "optimal_mine"
-    ].join(","));
+    ];
 
-    // Add data rows
-    for (let i = 0; i < minLength; i++) {
-      const pDay = playerSolution.daily[i];
-      const oDay = optimalSolution.daily[i];
+    const rows = diffData.map((d, i) => {
+      const player = playerDaily[i];
+      const optimal = optimalSolution.daily[i];
+      return [
+        d.day,
+        player.cash,
+        optimal.cash,
+        d.diff_cash,
+        player.invW,
+        optimal.invW,
+        d.diff_invW,
+        player.invF,
+        optimal.invF,
+        d.diff_invF,
+        d.player_mine ? "Y" : "N",
+        d.optimal_mine ? "Y" : "N"
+      ];
+    });
 
-      lines.push([
-        pDay.day,
-        pDay.weather,
-        pDay.location,
-        oDay.location,
-        pDay.action,
-        oDay.action,
-        pDay.cash.toFixed(2),
-        oDay.cash.toFixed(2),
-        analyticsData.cashDiff[i].toFixed(2),
-        analyticsData.cumulativeCashDiff[i].toFixed(2),
-        pDay.invW,
-        oDay.invW,
-        analyticsData.waterDiff[i],
-        pDay.invF,
-        oDay.invF,
-        analyticsData.foodDiff[i],
-        pDay.action === "MINE" ? "1" : "0",
-        oDay.action === "MINE" ? "1" : "0"
-      ].join(","));
-    }
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.join(","))
+    ].join("\n");
 
-    // Create download
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `analytics_${timestamp.slice(0, 19).replace(/:/g, "-")}.csv`;
-    document.body.appendChild(link);
+    link.download = `diff_vs_optimal_${Date.now()}.csv`;
     link.click();
-    document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  }, [playerSolution, optimalSolution, analyticsData]);
+  }, [optimalSolution, playerDaily, diffData]);
 
-  // Mining comparison
-  const miningComparison = useMemo(() => {
-    if (!playerSolution || !optimalSolution) return null;
-
-    const playerMiningDays = playerSolution.daily.filter(d => d.action === "MINE").length;
-    const optimalMiningDays = optimalSolution.daily.filter(d => d.action === "MINE").length;
-
-    return {
-      playerMiningDays,
-      optimalMiningDays,
-      difference: playerMiningDays - optimalMiningDays
-    };
-  }, [playerSolution, optimalSolution]);
-
-  // Don't show panel if no optimal solution
-  if (!optimalSolution) return null;
+  // Don't render if no optimal solution
+  if (!optimalSolution || playerDaily.length === 0) {
+    return null;
+  }
 
   return (
-    <div className="card" style={{ marginTop: "16px" }}>
-      <h2>高级分析 (Advanced Analytics)</h2>
-
-      {!playerSolution && (
-        <p style={{ color: "#666" }}>请先输入玩家方案以查看对比分析。</p>
+    <div className="card">
+      <h2>玩家对比分析</h2>
+      
+      {/* Gap Percentage */}
+      {gapPercentage !== null && (
+        <div className="flex" style={{ marginBottom: 12 }}>
+          <strong>最终资金差距:</strong>
+          <span style={{ color: gapPercentage > 0 ? "var(--bad)" : "var(--ok)" }}>
+            {gapPercentage > 0 ? `落后 ${gapPercentage.toFixed(1)}%` : `超过 ${Math.abs(gapPercentage).toFixed(1)}%`}
+          </span>
+        </div>
       )}
 
-      {playerSolution && analyticsData && (
-        <>
-          {/* Toggle controls */}
-          <div className="flex" style={{ marginBottom: "12px", flexWrap: "wrap" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={showCashDiff}
-                onChange={(e) => setShowCashDiff(e.target.checked)}
-              />
-              <span style={{ color: "#1976d2" }}>●</span>
-              <span>现金差</span>
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={showWaterDiff}
-                onChange={(e) => setShowWaterDiff(e.target.checked)}
-              />
-              <span style={{ color: "#2e7d32" }}>●</span>
-              <span>水差</span>
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={showFoodDiff}
-                onChange={(e) => setShowFoodDiff(e.target.checked)}
-              />
-              <span style={{ color: "#ef6c00" }}>●</span>
-              <span>食物差</span>
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={showCumulativeCash}
-                onChange={(e) => setShowCumulativeCash(e.target.checked)}
-              />
-              <span style={{ color: "#6a1b9a" }}>━━</span>
-              <span>累计现金差</span>
-            </label>
-          </div>
+      {/* Mining Comparison */}
+      <div style={{ marginBottom: 16 }}>
+        <h3>挖矿对比</h3>
+        <div className="flex" style={{ marginBottom: 8 }}>
+          <span>玩家挖矿天数: {miningStats.playerMineDays}</span>
+          <span>最优挖矿天数: {miningStats.optimalMineDays}</span>
+          <span>差异: {miningStats.difference > 0 ? `+${miningStats.difference}` : miningStats.difference}</span>
+        </div>
+        <div style={{ maxHeight: 200, overflow: "auto" }}>
+          <table style={{ width: "100%", fontSize: "0.9em", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#f5f5f5", position: "sticky", top: 0 }}>
+                <th style={{ padding: "4px 8px", border: "1px solid #e0e0e0" }}>日</th>
+                <th style={{ padding: "4px 8px", border: "1px solid #e0e0e0" }}>玩家挖矿</th>
+                <th style={{ padding: "4px 8px", border: "1px solid #e0e0e0" }}>最优挖矿</th>
+                <th style={{ padding: "4px 8px", border: "1px solid #e0e0e0" }}>差异</th>
+              </tr>
+            </thead>
+            <tbody>
+              {diffData.map(d => (
+                <tr key={d.day}>
+                  <td style={{ padding: "4px 8px", border: "1px solid #e0e0e0", textAlign: "center" }}>{d.day}</td>
+                  <td style={{ padding: "4px 8px", border: "1px solid #e0e0e0", textAlign: "center" }}>
+                    {d.player_mine ? "✔" : "✘"}
+                  </td>
+                  <td style={{ padding: "4px 8px", border: "1px solid #e0e0e0", textAlign: "center" }}>
+                    {d.optimal_mine ? "✔" : "✘"}
+                  </td>
+                  <td style={{ padding: "4px 8px", border: "1px solid #e0e0e0", textAlign: "center" }}>
+                    {d.player_mine === d.optimal_mine ? "✔" : "✘"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-          {/* Chart */}
-          <div style={{ marginBottom: "16px" }}>
-            <LineChart series={chartSeries} width={700} height={300} />
-          </div>
+      {/* Chart Toggles */}
+      <div className="flex" style={{ marginBottom: 8 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <input type="checkbox" checked={showCashChart} onChange={e => setShowCashChart(e.target.checked)} />
+          资金差异
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <input type="checkbox" checked={showWaterChart} onChange={e => setShowWaterChart(e.target.checked)} />
+          水库存差异
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <input type="checkbox" checked={showFoodChart} onChange={e => setShowFoodChart(e.target.checked)} />
+          食物库存差异
+        </label>
+      </div>
 
-          {/* Legend */}
-          <div style={{ marginBottom: "12px", fontSize: "12px", color: "#666" }}>
-            <div><span style={{ color: "#1976d2" }}>━━</span> 实线: 每日差值 (player - optimal)</div>
-            <div><span style={{ color: "#6a1b9a" }}>━━</span> 虚线: 累计差值</div>
-            <div>提示: 悬停查看详细数值 (移动端: 点击固定)</div>
-          </div>
+      {/* Difference Charts */}
+      <div style={{ marginBottom: 16 }}>
+        <h3>每日差异图表 (玩家 - 最优)</h3>
+        {showCashChart && (
+          <DifferenceChart
+            data={diffData.map(d => ({ day: d.day, value: d.diff_cash }))}
+            label="资金差异"
+            color="#1976d2"
+          />
+        )}
+        {showWaterChart && (
+          <DifferenceChart
+            data={diffData.map(d => ({ day: d.day, value: d.diff_invW }))}
+            label="水库存差异"
+            color="#0288d1"
+          />
+        )}
+        {showFoodChart && (
+          <DifferenceChart
+            data={diffData.map(d => ({ day: d.day, value: d.diff_invF }))}
+            label="食物库存差异"
+            color="#00796b"
+          />
+        )}
+      </div>
 
-          {/* Mining comparison */}
-          {miningComparison && (
-            <div style={{ marginBottom: "12px", padding: "8px", background: "#f5f5f5", borderRadius: "4px" }}>
-              <h4 style={{ margin: "0 0 8px 0" }}>挖矿对比</h4>
-              <div>玩家挖矿天数: {miningComparison.playerMiningDays}</div>
-              <div>最优挖矿天数: {miningComparison.optimalMiningDays}</div>
-              <div style={{ 
-                color: miningComparison.difference > 0 ? "var(--ok)" : miningComparison.difference < 0 ? "var(--bad)" : "#666"
-              }}>
-                差异: {miningComparison.difference > 0 ? "+" : ""}{miningComparison.difference} 天
-              </div>
-            </div>
-          )}
+      {/* Export Button */}
+      <div className="flex">
+        <button className="btn" onClick={handleExportCSV}>
+          导出CSV
+        </button>
+      </div>
+    </div>
+  );
+};
 
-          {/* Export button */}
-          <button 
-            className="btn" 
-            onClick={handleExportCSV}
-            aria-label="导出CSV分析数据"
-          >
-            📊 导出CSV分析
-          </button>
-        </>
-      )}
+// Simple SVG line chart component
+interface DifferenceChartProps {
+  data: Array<{ day: number; value: number }>;
+  label: string;
+  color: string;
+}
+
+const DifferenceChart: React.FC<DifferenceChartProps> = ({ data, label, color }) => {
+  if (data.length === 0) return null;
+
+  const width = 100; // percentage
+  const height = 120;
+  const padding = { top: 20, right: 10, bottom: 25, left: 50 };
+  const chartWidth = 600 - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+
+  const values = data.map(d => d.value);
+  const minVal = Math.min(0, ...values);
+  const maxVal = Math.max(0, ...values);
+  const range = maxVal - minVal || 1;
+
+  const xStep = chartWidth / (data.length - 1 || 1);
+  
+  const getY = (val: number) => {
+    return padding.top + chartHeight - ((val - minVal) / range) * chartHeight;
+  };
+
+  const zeroY = getY(0);
+
+  // Create path for line
+  const pathData = data.map((d, i) => {
+    const x = padding.left + i * xStep;
+    const y = getY(d.value);
+    return `${i === 0 ? "M" : "L"} ${x} ${y}`;
+  }).join(" ");
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: "0.9em", marginBottom: 4, fontWeight: 500 }}>{label}</div>
+      <svg width="100%" height={height} viewBox={`0 0 600 ${height}`} style={{ border: "1px solid #e0e0e0" }}>
+        {/* Zero line */}
+        <line
+          x1={padding.left}
+          y1={zeroY}
+          x2={600 - padding.right}
+          y2={zeroY}
+          stroke="#999"
+          strokeWidth="1"
+          strokeDasharray="4 2"
+        />
+
+        {/* Line chart */}
+        <path
+          d={pathData}
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+        />
+
+        {/* Data points colored by positive/negative */}
+        {data.map((d, i) => {
+          const x = padding.left + i * xStep;
+          const y = getY(d.value);
+          const pointColor = d.value >= 0 ? "#2e7d32" : "#b71c1c";
+          return (
+            <circle
+              key={i}
+              cx={x}
+              cy={y}
+              r="3"
+              fill={pointColor}
+            />
+          );
+        })}
+
+        {/* Y-axis labels */}
+        <text x={padding.left - 5} y={padding.top} textAnchor="end" fontSize="10" fill="#666">
+          {maxVal.toFixed(0)}
+        </text>
+        <text x={padding.left - 5} y={zeroY} textAnchor="end" fontSize="10" fill="#666">
+          0
+        </text>
+        <text x={padding.left - 5} y={padding.top + chartHeight} textAnchor="end" fontSize="10" fill="#666">
+          {minVal.toFixed(0)}
+        </text>
+
+        {/* X-axis labels (first, middle, last) */}
+        {data.length > 0 && (
+          <>
+            <text x={padding.left} y={height - 5} textAnchor="middle" fontSize="10" fill="#666">
+              Day {data[0].day}
+            </text>
+            {data.length > 2 && (
+              <text x={padding.left + chartWidth / 2} y={height - 5} textAnchor="middle" fontSize="10" fill="#666">
+                Day {data[Math.floor(data.length / 2)].day}
+              </text>
+            )}
+            {data.length > 1 && (
+              <text x={padding.left + chartWidth} y={height - 5} textAnchor="middle" fontSize="10" fill="#666">
+                Day {data[data.length - 1].day}
+              </text>
+            )}
+          </>
+        )}
+      </svg>
     </div>
   );
 };
