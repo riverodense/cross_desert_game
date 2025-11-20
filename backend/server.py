@@ -149,7 +149,7 @@ def solve_milp(payload: dict):
     refund = InvW[D] * (refund_factor * prices["water"]) + InvF[D] * (refund_factor * prices["food"])
     prob += Cash[D] + refund, "FinalCash"
 
-    solver = pulp.PULP_CBC_CMD(msg=0, maxSeconds=60)
+    solver = pulp.PULP_CBC_CMD(msg=0, timeLimit=60)
     prob.solve(solver)
 
     status = pulp.LpStatus[prob.status]
