@@ -17,9 +17,6 @@ with open(ROOT / "adjacency.json", "r", encoding="utf-8-sig") as f:
     ADJ = json.load(f)
 NEI = {int(k): v for k, v in ADJ.items()}
 
-# Global state for solution storage
-LAST_SOLUTION = None
-
 # Configuration file path
 CONFIG_PATH = ROOT / "game_config.json"
 
@@ -33,7 +30,8 @@ def load_config():
         "show_solution_to_players": False,
         "controller_tokens": [],
         "controller_master_token": secrets.token_hex(16),
-        "controller_lock": False
+        "controller_lock": False,
+        "last_solution": None
     }
 
 def save_config(config):
@@ -44,6 +42,9 @@ def save_config(config):
 # Load config at startup
 CONFIG = load_config()
 save_config(CONFIG)  # Ensure file exists with master token
+
+# Load last solution from config
+LAST_SOLUTION = CONFIG.get("last_solution")
 
 def require_controller_auth():
     """Decorator to require controller authentication"""
@@ -217,6 +218,10 @@ def api_solve():
             "generated_at": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
         }
         result["generated_at"] = LAST_SOLUTION["generated_at"]
+        
+        # Persist solution to disk
+        CONFIG["last_solution"] = LAST_SOLUTION
+        save_config(CONFIG)
     
     return jsonify(result)
 
