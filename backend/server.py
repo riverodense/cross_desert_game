@@ -14,10 +14,53 @@ with open(ROOT / "adjacency.json", "r", encoding="utf-8-sig") as f:
     ADJ = json.load(f)
 NEI = {int(k): v for k, v in ADJ.items()}
 
+# Global state for solution sharing
+LAST_SOLUTION = None
+CONFIG = {
+    "show_solution_to_players": False
+}
+
+@app.get("/api/config")
+def api_config():
+    return jsonify(CONFIG)
+
+@app.post("/api/config")
+def api_update_config():
+    data = request.get_json(force=True)
+    if "show_solution_to_players" in data:
+        CONFIG["show_solution_to_players"] = bool(data["show_solution_to_players"])
+    return jsonify(CONFIG)
+
+@app.get("/api/solution")
+def api_solution():
+    if not CONFIG.get("show_solution_to_players", False):
+        return jsonify({"error": "Solution not available"}), 403
+    if LAST_SOLUTION is None:
+        return jsonify({"error": "No solution available yet"}), 404
+    return jsonify(LAST_SOLUTION)
+
 @app.post("/api/solve")
 def api_solve():
     data = request.get_json(force=True)
     result = solve_milp(data)
+    # Store solution globally
+    global LAST_SOLUTION
+    LAST_SOLUTION = {
+        "daily": result["daily"],
+        "path": result["path"],
+        "purchases": result["purchases"],
+        "start_params": {
+            "deadline": data.get("deadline", 30),
+            "start_node": data.get("start_node", 1),
+            "end_node": data.get("end_node", 64),
+            "prices": data["prices"],
+            "mass": data["mass"],
+            "base_consumption": data["base_consumption"],
+            "move_multiplier": data["move_multiplier"],
+            "mine_multiplier": data["mine_multiplier"],
+            "weather": data["weather"]
+        }
+    }
     return jsonify(result)
 
 def solve_milp(payload: dict):
@@ -149,7 +192,7 @@ def solve_milp(payload: dict):
     refund = InvW[D] * (refund_factor * prices["water"]) + InvF[D] * (refund_factor * prices["food"])
     prob += Cash[D] + refund, "FinalCash"
 
-    solver = pulp.PULP_CBC_CMD(msg=0, maxSeconds=60)
+    solver = pulp.PULP_CBC_CMD(msg=0, timeLimit=60)
     prob.solve(solver)
 
     status = pulp.LpStatus[prob.status]
@@ -205,6 +248,95 @@ def solve_milp(payload: dict):
                                     "food": pulp.value(buyF_start) or 0,
                                     "cost": start_cost},
                            "villages": purchases_v} }
+
+def build_general_latex(params: dict) -> str:
+    """Build comprehensive MILP formulation LaTeX with dynamic weather."""
+    D = params.get("deadline", 30)
+    weather = params.get("weather", ["Sunny"] * 30)
+    base_cons = params.get("base_consumption", {
+        "Sunny": {"water": 5, "food": 7},
+        "Hot": {"water": 8, "food": 6},
+        "Storm": {"water": 10, "food": 10}
+    })
+    move_mult = params.get("move_multiplier", 2.0)
+    mine_mult = params.get("mine_multiplier", 2.5)
+    prices = params.get("prices", {"water": 5, "food": 10})
+    mass = params.get("mass", {"water": 3, "food": 2})
+    initial_cash = params.get("initial_cash", 10000)
+    weight_limit = params.get("weight_limit_kg", 1200)
+    refund_factor = params.get("refund_factor", 0.5)
+    
+    # Build weather string for display
+    weather_str = ", ".join([f"d_{{{i+1}}}={w[:2]}" for i, w in enumerate(weather[:10])]) + ", \\ldots"
+    
+    latex = r"""\begin{align*}
+\textbf{Variables:} \\
+& x_{d,i} \in \{0,1\} \quad \forall d \in [0,D], i \in V \quad \text{(位置)} \\
+& \text{stay}_{d,i} \in \{0,1\} \quad \forall d \in [1,D], i \in V \quad \text{(停留)} \\
+& m_{d,i,j} \in \{0,1\} \quad \forall d \in [1,D], (i,j) \in E \quad \text{(移动, 非沙暴日)} \\
+& \text{mine}_{d,i} \in \{0,1\} \quad \forall d \in [1,D], i \in M \quad \text{(挖矿)} \\
+& \text{buyW}_0, \text{buyF}_0 \in \mathbb{Z}_+ \quad \text{(第0天购买)} \\
+& \text{buyW}_{d,i}, \text{buyF}_{d,i} \in \mathbb{Z}_+ \quad \forall d \in [1,D], i \in V_{\text{vil}} \quad \text{(村庄购买)} \\
+& \text{InvW}_d, \text{InvF}_d \in \mathbb{Z}_+ \quad \forall d \in [0,D] \quad \text{(库存)} \\
+& \text{Cash}_d \in \mathbb{R}_+ \quad \forall d \in [0,D] \quad \text{(现金)} \\
+\\
+\textbf{Objective:} \\
+& \max \quad \text{Cash}_D + """ + f"{refund_factor}" + r""" \times (""" + f"{prices['water']}" + r""" \cdot \text{InvW}_D + """ + f"{prices['food']}" + r""" \cdot \text{InvF}_D) \\
+\\
+\textbf{Constraints:} \\
+& x_{0,1} = 1, \quad x_{0,i} = 0 \; \forall i \neq 1 \quad \text{(起点)} \\
+& x_{D,64} = 1, \quad x_{d-1,64} \leq x_{d,64} \; \forall d \in [1,D] \quad \text{(终点)} \\
+& \sum_{i \in V} x_{d,i} = 1 \quad \forall d \in [0,D] \quad \text{(唯一位置)} \\
+\\
+& \text{若第d天非沙暴:} \quad \text{stay}_{d,i} + \sum_{j \in N(i)} m_{d,i,j} = x_{d-1,i} \quad \forall i \in V \\
+& \qquad\qquad\qquad x_{d,j} = \text{stay}_{d,j} + \sum_{i \in N(j)} m_{d,i,j} \quad \forall j \in V \\
+& \text{若第d天沙暴:} \quad \text{stay}_{d,i} = x_{d-1,i} \quad \forall i \in V \\
+\\
+& \text{mine}_{d,i} \leq \text{stay}_{d,i} \quad \forall d \in [1,D], i \in M \\
+& \text{mine}_{d,i} \leq 1 - \text{arrive}_{d,i}, \quad \text{arrive}_{d,i} \geq x_{d,i} - x_{d-1,i} \quad \text{(到达当日禁挖)} \\
+\\
+& \text{buyW}_{d,i}, \text{buyF}_{d,i} \leq BIG \cdot x_{d,i} \quad \forall d \in [1,D], i \in V_{\text{vil}} \\
+\\
+& \text{Cash}_0 = """ + f"{initial_cash}" + r""" - (""" + f"{prices['water']}" + r""" \cdot \text{buyW}_0 + """ + f"{prices['food']}" + r""" \cdot \text{buyF}_0) \\
+& \text{InvW}_0 = \text{buyW}_0, \quad \text{InvF}_0 = \text{buyF}_0 \\
+& """ + f"{mass['water']}" + r""" \cdot \text{InvW}_0 + """ + f"{mass['food']}" + r""" \cdot \text{InvF}_0 \leq """ + f"{weight_limit}" + r""" \\
+\\
+& \text{消耗公式 (第d天):} \\
+& \quad \text{consW}_d = \sum_{i \in V} \text{stay}_{d,i} \cdot b^w_d + """ + f"{move_mult}" + r""" \cdot \sum_{(i,j) \in E} m_{d,i,j} \cdot b^w_d \\
+& \qquad\qquad\qquad + """ + f"({mine_mult}-1)" + r""" \cdot \sum_{i \in M} \text{mine}_{d,i} \cdot b^w_d \\
+& \quad \text{consF}_d = \sum_{i \in V} \text{stay}_{d,i} \cdot b^f_d + """ + f"{move_mult}" + r""" \cdot \sum_{(i,j) \in E} m_{d,i,j} \cdot b^f_d \\
+& \qquad\qquad\qquad + """ + f"({mine_mult}-1)" + r""" \cdot \sum_{i \in M} \text{mine}_{d,i} \cdot b^f_d \\
+& \quad \text{其中 } b^w_d, b^f_d \text{ 为第d天天气基础消耗 (""" + weather_str + r""")} \\
+\\
+& \text{InvW}_d = \text{InvW}_{d-1} + \sum_{i \in V_{\text{vil}}} \text{buyW}_{d,i} - \text{consW}_d \quad \forall d \in [1,D] \\
+& \text{InvF}_d = \text{InvF}_{d-1} + \sum_{i \in V_{\text{vil}}} \text{buyF}_{d,i} - \text{consF}_d \quad \forall d \in [1,D] \\
+& \text{InvW}_d, \text{InvF}_d \geq 0, \quad """ + f"{mass['water']}" + r""" \cdot \text{InvW}_d + """ + f"{mass['food']}" + r""" \cdot \text{InvF}_d \leq """ + f"{weight_limit}" + r""" \quad \forall d \in [1,D] \\
+\\
+& \text{Cash}_d = \text{Cash}_{d-1} - \sum_{i \in V_{\text{vil}}} (""" + f"{2*prices['water']}" + r""" \cdot \text{buyW}_{d,i} + """ + f"{2*prices['food']}" + r""" \cdot \text{buyF}_{d,i}) \\
+& \qquad\qquad + \sum_{i \in M} 1000 \cdot \text{mine}_{d,i} \quad \forall d \in [1,D] \\
+& \text{Cash}_d \geq 0 \quad \forall d \in [1,D] \quad \text{(不可透支)}
+\end{align*}"""
+    
+    return latex
+
+@app.get("/api/latex")
+def api_latex():
+    """Return MILP formulation as LaTeX, with optional weather parameter."""
+    params = request.args.to_dict()
+    if "weather" in params:
+        import json as js
+        params["weather"] = js.loads(params["weather"])
+    if "base_consumption" in params:
+        import json as js
+        params["base_consumption"] = js.loads(params["base_consumption"])
+    if "prices" in params:
+        import json as js
+        params["prices"] = js.loads(params["prices"])
+    if "mass" in params:
+        import json as js
+        params["mass"] = js.loads(params["mass"])
+    latex = build_general_latex(params)
+    return jsonify({"latex": latex})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=False)
