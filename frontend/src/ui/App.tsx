@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { HexGrid } from "./HexGrid";
 import { WeatherEditor } from "./WeatherEditor";
+import { PlayerPanel } from "./PlayerPanel";
 import { solve } from "../api";
-import type { CellType, SolveRequest, Weather } from "../types";
+import type { CellType, SolveRequest, Weather, SolveResponse } from "../types";
 
 const defaultWeather: Weather[] = Array.from({length:30},()=> "Sunny");
 
@@ -14,7 +15,8 @@ export const App: React.FC = () => {
   const villages = useMemo(()=>Object.entries(labels).filter(([,t])=>t==="Village").map(([k])=>+k), [labels]);
 
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<SolveResponse | null>(null);
+  const [playerSolution, setPlayerSolution] = useState<SolveResponse | null>(null);
 
   function setLabel(id:number, next:CellType){ setLabels(prev => ({...prev, [id]: next})); }
 
@@ -77,8 +79,29 @@ export const App: React.FC = () => {
           }, null, 2)}</pre>
           <h3>每日行动</h3>
           <pre>{JSON.stringify(result.daily, null, 2)}</pre>
+          <div className="flex" style={{marginTop:8}}>
+            <button className="btn" onClick={() => {
+              // Simulate a player solution with slightly different values for demo
+              const mockPlayer: SolveResponse = {
+                ...result,
+                daily: result.daily.map(d => ({
+                  ...d,
+                  cash: d.cash * 0.95,
+                  invW: Math.max(0, d.invW - 2),
+                  invF: Math.max(0, d.invF - 1)
+                }))
+              };
+              setPlayerSolution(mockPlayer);
+            }}>生成模拟玩家方案</button>
+          </div>
         </>)}
       </div>
+
+      <PlayerPanel 
+        playerSolution={playerSolution}
+        optimalSolution={result}
+        weather={weather}
+      />
     </div>
   );
 };
