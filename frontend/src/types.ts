@@ -48,3 +48,28 @@ export interface SolveResponse {
     villages: Array<{ day:number; node:number; water:number; food:number; cost:number; }>;
   };
 }
+
+export interface Config {
+  show_solution_to_players: boolean;
+}
+
+export interface SolutionResponse {
+  daily: SolveResponse["daily"];
+  path: number[];
+  purchases: SolveResponse["purchases"];
+  start_params: {
+    deadline: number;
+    start_node: number;
+    end_node: number;
+    prices: { water:number; food:number; };
+    mass: { water:number; food:number; };
+    base_consumption: Record<Weather, { water:number; food:number }>;
+    move_multiplier: number;
+    mine_multiplier: number;
+    weather: Weather[];
+  };
+}
+
+export interface LatexResponse {
+  latex: string;
+}
