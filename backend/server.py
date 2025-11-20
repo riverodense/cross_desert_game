@@ -4,20 +4,205 @@ from flask_cors import CORS
 from pathlib import Path
 import json
 import pulp
+import secrets
+from functools import wraps
 
 app = Flask(__name__)
 CORS(app)
 
 ROOT = Path(__file__).resolve().parents[1]
-# Use UTF-8-SIG so a BOM at the start doesn’t break JSON parsing
+CONFIG_PATH = ROOT / "game_config.json"
+
+# Use UTF-8-SIG so a BOM at the start doesn't break JSON parsing
 with open(ROOT / "adjacency.json", "r", encoding="utf-8-sig") as f:
     ADJ = json.load(f)
 NEI = {int(k): v for k, v in ADJ.items()}
 
+# Configuration management
+def load_config():
+    """Load game configuration from JSON file."""
+    if not CONFIG_PATH.exists():
+        # Create default configuration
+        config = {
+            "controller_master_token": secrets.token_hex(16),
+            "controller_tokens": [],
+            "controller_lock": False
+        }
+        save_config(config)
+        return config
+    
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    
+    # Ensure master token exists
+    if "controller_master_token" not in config or not config["controller_master_token"]:
+        config["controller_master_token"] = secrets.token_hex(16)
+        save_config(config)
+    
+    # Ensure other keys exist
+    if "controller_tokens" not in config:
+        config["controller_tokens"] = []
+    if "controller_lock" not in config:
+        config["controller_lock"] = False
+    
+    return config
+
+def save_config(config):
+    """Save game configuration to JSON file."""
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+
+def check_controller_auth(token, master_required=False):
+    """
+    Check if a token is valid for controller access.
+    
+    Args:
+        token: The token to check
+        master_required: If True, only master token is accepted
+        
+    Returns:
+        dict with keys: authorized (bool), is_master (bool)
+    """
+    if not token:
+        return {"authorized": False, "is_master": False}
+    
+    config = load_config()
+    master_token = config["controller_master_token"]
+    is_master = (token == master_token)
+    
+    if master_required:
+        return {"authorized": is_master, "is_master": is_master}
+    
+    # If lock is enabled, only master token works
+    if config["controller_lock"]:
+        return {"authorized": is_master, "is_master": is_master}
+    
+    # Check if token is in the list or is master
+    authorized = is_master or (token in config["controller_tokens"])
+    return {"authorized": authorized, "is_master": is_master}
+
+def require_controller_auth(master_required=False):
+    """Decorator to require controller authentication."""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # Get token from header or JSON body
+            token = request.headers.get("X-Controller-Token")
+            if not token:
+                data = request.get_json(silent=True)
+                if data:
+                    token = data.get("token")
+            
+            auth_result = check_controller_auth(token, master_required)
+            if not auth_result["authorized"]:
+                return jsonify({"error": "Unauthorized", "message": "Valid controller token required"}), 403
+            
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+# Access control endpoints
+@app.get("/api/controller/access/init")
+def api_controller_access_init():
+    """Initialize config and return master token. Public endpoint for first-time setup."""
+    config = load_config()
+    return jsonify({
+        "master_token": config["controller_master_token"],
+        "initialized": True
+    })
+
+@app.post("/api/controller/access/check")
+def api_controller_access_check():
+    """Check if a token is valid."""
+    data = request.get_json(force=True)
+    token = data.get("token", "")
+    result = check_controller_auth(token)
+    return jsonify(result)
+
+@app.post("/api/controller/access/list")
+@require_controller_auth()
+def api_controller_access_list():
+    """List all tokens and lock status. Requires valid token."""
+    config = load_config()
+    token = request.headers.get("X-Controller-Token")
+    if not token:
+        data = request.get_json(silent=True)
+        if data:
+            token = data.get("token")
+    
+    auth_result = check_controller_auth(token)
+    
+    return jsonify({
+        "master_token": config["controller_master_token"] if auth_result["is_master"] else None,
+        "tokens": config["controller_tokens"],
+        "lock": config["controller_lock"],
+        "is_master": auth_result["is_master"]
+    })
+
+@app.post("/api/controller/access/add")
+@require_controller_auth(master_required=True)
+def api_controller_access_add():
+    """Add a new token. Requires master token."""
+    data = request.get_json(force=True)
+    new_token = data.get("new_token", "").strip()
+    
+    if not new_token:
+        return jsonify({"error": "Token required"}), 400
+    
+    config = load_config()
+    
+    # Don't add if it's the master token or already exists
+    if new_token == config["controller_master_token"]:
+        return jsonify({"error": "Cannot add master token to list"}), 400
+    
+    if new_token in config["controller_tokens"]:
+        return jsonify({"error": "Token already exists"}), 400
+    
+    config["controller_tokens"].append(new_token)
+    save_config(config)
+    
+    return jsonify({"success": True, "tokens": config["controller_tokens"]})
+
+@app.post("/api/controller/access/remove")
+@require_controller_auth(master_required=True)
+def api_controller_access_remove():
+    """Remove a token. Requires master token."""
+    data = request.get_json(force=True)
+    token_to_remove = data.get("token_to_remove", "")
+    
+    if not token_to_remove:
+        return jsonify({"error": "Token required"}), 400
+    
+    config = load_config()
+    
+    if token_to_remove not in config["controller_tokens"]:
+        return jsonify({"error": "Token not found"}), 404
+    
+    config["controller_tokens"].remove(token_to_remove)
+    save_config(config)
+    
+    return jsonify({"success": True, "tokens": config["controller_tokens"]})
+
+@app.post("/api/controller/access/lock")
+@require_controller_auth(master_required=True)
+def api_controller_access_lock():
+    """Toggle lock mode. Requires master token."""
+    data = request.get_json(force=True)
+    lock = data.get("lock", False)
+    
+    config = load_config()
+    config["controller_lock"] = bool(lock)
+    save_config(config)
+    
+    return jsonify({"success": True, "lock": config["controller_lock"]})
+
 @app.post("/api/solve")
+@require_controller_auth()
 def api_solve():
     data = request.get_json(force=True)
     result = solve_milp(data)
+    return jsonify(result)
+
     return jsonify(result)
 
 def solve_milp(payload: dict):
@@ -149,7 +334,7 @@ def solve_milp(payload: dict):
     refund = InvW[D] * (refund_factor * prices["water"]) + InvF[D] * (refund_factor * prices["food"])
     prob += Cash[D] + refund, "FinalCash"
 
-    solver = pulp.PULP_CBC_CMD(msg=0, maxSeconds=60)
+    solver = pulp.PULP_CBC_CMD(msg=0, timeLimit=60)
     prob.solve(solver)
 
     status = pulp.LpStatus[prob.status]
