@@ -15,10 +15,16 @@ export const WeatherEditor: React.FC<{ weather: Weather[]; setWeather: (w:Weathe
     ];
     setWeather(preset);
   }
+  function randomWeather(){
+    const choices: Weather[] = ["Sunny", "Hot", "Storm"];
+    const random = Array.from({length:30}, () => choices[Math.floor(Math.random() * choices.length)]);
+    setWeather(random);
+  }
+
   return (
     <div>
       <div className="flex">
-        <button className="btn" onClick={fillPreset}>一键填充题目天气</button>
+        <button className="btn" onClick={randomWeather}>随机生成天气</button>
         <span className="badge hot">Hot</span>
         <span className="badge sunny">Sunny</span>
         <span className="badge storm">Storm</span>
