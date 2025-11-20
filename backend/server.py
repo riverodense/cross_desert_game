@@ -4,9 +4,13 @@ from flask_cors import CORS
 from pathlib import Path
 import json
 import pulp
+import time
 
 app = Flask(__name__)
 CORS(app)
+
+# Global storage for the last optimal solution
+LAST_SOLUTION = None
 
 ROOT = Path(__file__).resolve().parents[1]
 # Use UTF-8-SIG so a BOM at the start doesn’t break JSON parsing
@@ -16,9 +20,31 @@ NEI = {int(k): v for k, v in ADJ.items()}
 
 @app.post("/api/solve")
 def api_solve():
+    global LAST_SOLUTION
     data = request.get_json(force=True)
     result = solve_milp(data)
+    
+    # If optimal solution found, store it with timestamp
+    if result.get("status") == "Optimal":
+        LAST_SOLUTION = {
+            "generated_at": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
+            "objective": result["objective"],
+            "final_cash": result["final_cash"],
+            "arrive_day": result["arrive_day"],
+            "path": result["path"],
+            "daily": result["daily"],
+            "purchases": result["purchases"]
+        }
+        result["generated_at"] = LAST_SOLUTION["generated_at"]
+    
     return jsonify(result)
+
+@app.get("/api/solution")
+def api_solution():
+    """Get the last optimal solution with timestamp"""
+    if LAST_SOLUTION is None:
+        return jsonify({"error": "No optimal solution available yet"}), 404
+    return jsonify(LAST_SOLUTION)
 
 def solve_milp(payload: dict):
     D = int(payload.get("deadline", 30))
