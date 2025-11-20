@@ -2,222 +2,22 @@ from __future__ import annotations
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pathlib import Path
-from functools import wraps
 import json
 import pulp
-import time
-import secrets
 
 app = Flask(__name__)
 CORS(app)
 
 ROOT = Path(__file__).resolve().parents[1]
-# Use UTF-8-SIG so a BOM at the start doesn't break JSON parsing
+# Use UTF-8-SIG so a BOM at the start doesn’t break JSON parsing
 with open(ROOT / "adjacency.json", "r", encoding="utf-8-sig") as f:
     ADJ = json.load(f)
 NEI = {int(k): v for k, v in ADJ.items()}
 
-# Global state for solution storage
-LAST_SOLUTION = None
-
-# Configuration file path
-CONFIG_PATH = ROOT / "game_config.json"
-
-def load_config():
-    """Load game configuration from disk"""
-    if CONFIG_PATH.exists():
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    # Default config
-    return {
-        "show_solution_to_players": False,
-        "controller_tokens": [],
-        "controller_master_token": secrets.token_hex(16),
-        "controller_lock": False
-    }
-
-def save_config(config):
-    """Save game configuration to disk"""
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2)
-
-# Load config at startup
-CONFIG = load_config()
-save_config(CONFIG)  # Ensure file exists with master token
-
-def require_controller_auth():
-    """Decorator to require controller authentication"""
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            token = request.headers.get("X-Controller-Token") or (request.json.get("token") if request.json else None)
-            if not token:
-                return jsonify({"error": "Missing authentication token"}), 401
-            
-            master = CONFIG.get("controller_master_token")
-            tokens = CONFIG.get("controller_tokens", [])
-            locked = CONFIG.get("controller_lock", False)
-            
-            if locked:
-                if token != master:
-                    return jsonify({"error": "System is locked. Only master token allowed."}), 403
-            else:
-                if token not in tokens and token != master:
-                    return jsonify({"error": "Invalid token"}), 403
-            
-            return f(*args, **kwargs)
-        return decorated_function
-    return decorator
-
-@app.get("/api/config/get")
-def api_config_get():
-    """Get current game configuration (public endpoint)"""
-    # Return config without sensitive token information for public access
-    return jsonify({
-        "show_solution_to_players": CONFIG.get("show_solution_to_players", False)
-    })
-
-@app.post("/api/config/update")
-@require_controller_auth()
-def api_config_update():
-    """Update game configuration (controller only)"""
-    data = request.get_json(force=True)
-    if "show_solution_to_players" in data:
-        CONFIG["show_solution_to_players"] = bool(data["show_solution_to_players"])
-    save_config(CONFIG)
-    return jsonify({"success": True})
-
-@app.get("/api/adjacency")
-def api_adjacency():
-    """Get hex adjacency map"""
-    return jsonify(NEI)
-
-@app.get("/api/solution")
-def api_solution():
-    """Get stored optimal solution (requires solution sharing to be enabled)"""
-    if not CONFIG.get("show_solution_to_players", False):
-        return jsonify({"error": "Solution not available to players"}), 403
-    
-    if LAST_SOLUTION is None:
-        return jsonify({"error": "No solution available"}), 404
-    
-    return jsonify(LAST_SOLUTION)
-
-# Access control endpoints
-@app.post("/api/controller/access/init")
-def api_controller_init():
-    """Initialize controller access (returns master token on first call)"""
-    return jsonify({
-        "master_token": CONFIG.get("controller_master_token"),
-        "message": "Store this token securely. It cannot be retrieved later."
-    })
-
-@app.post("/api/controller/access/check")
-def api_controller_check():
-    """Check if a token is valid"""
-    data = request.get_json(force=True)
-    token = data.get("token")
-    if not token:
-        return jsonify({"authorized": False, "master": False})
-    
-    master = CONFIG.get("controller_master_token")
-    tokens = CONFIG.get("controller_tokens", [])
-    locked = CONFIG.get("controller_lock", False)
-    
-    is_master = (token == master)
-    is_valid = is_master or (token in tokens and not locked)
-    
-    return jsonify({
-        "authorized": is_valid,
-        "master": is_master,
-        "locked": locked
-    })
-
-@app.post("/api/controller/access/list")
-@require_controller_auth()
-def api_controller_list():
-    """List all controller tokens (master token required)"""
-    token = request.headers.get("X-Controller-Token") or (request.json.get("token") if request.json else None)
-    if token != CONFIG.get("controller_master_token"):
-        return jsonify({"error": "Master token required"}), 403
-    
-    return jsonify({
-        "master_token": CONFIG.get("controller_master_token"),
-        "tokens": CONFIG.get("controller_tokens", []),
-        "lock": CONFIG.get("controller_lock", False)
-    })
-
-@app.post("/api/controller/access/add")
-@require_controller_auth()
-def api_controller_add():
-    """Add a new controller token (master token required)"""
-    token_check = request.headers.get("X-Controller-Token") or (request.json.get("token") if request.json else None)
-    if token_check != CONFIG.get("controller_master_token"):
-        return jsonify({"error": "Master token required"}), 403
-    
-    data = request.get_json(force=True)
-    new_token = data.get("new_token") or secrets.token_hex(16)
-    
-    if new_token not in CONFIG.get("controller_tokens", []):
-        CONFIG.setdefault("controller_tokens", []).append(new_token)
-        save_config(CONFIG)
-    
-    return jsonify({"success": True, "token": new_token})
-
-@app.post("/api/controller/access/remove")
-@require_controller_auth()
-def api_controller_remove():
-    """Remove a controller token (master token required)"""
-    token_check = request.headers.get("X-Controller-Token") or (request.json.get("token") if request.json else None)
-    if token_check != CONFIG.get("controller_master_token"):
-        return jsonify({"error": "Master token required"}), 403
-    
-    data = request.get_json(force=True)
-    token_to_remove = data.get("token_to_remove")
-    
-    tokens = CONFIG.get("controller_tokens", [])
-    if token_to_remove in tokens:
-        tokens.remove(token_to_remove)
-        CONFIG["controller_tokens"] = tokens
-        save_config(CONFIG)
-    
-    return jsonify({"success": True})
-
-@app.post("/api/controller/access/lock")
-@require_controller_auth()
-def api_controller_lock():
-    """Toggle controller lock (master token required)"""
-    token = request.headers.get("X-Controller-Token") or (request.json.get("token") if request.json else None)
-    if token != CONFIG.get("controller_master_token"):
-        return jsonify({"error": "Master token required"}), 403
-    
-    data = request.get_json(force=True)
-    CONFIG["controller_lock"] = bool(data.get("lock", False))
-    save_config(CONFIG)
-    
-    return jsonify({"success": True, "locked": CONFIG["controller_lock"]})
-
 @app.post("/api/solve")
-@require_controller_auth()
 def api_solve():
-    global LAST_SOLUTION
     data = request.get_json(force=True)
     result = solve_milp(data)
-    
-    # Store solution if optimal
-    if result.get("status") == "Optimal":
-        LAST_SOLUTION = {
-            "status": result["status"],
-            "objective": result["objective"],
-            "final_cash": result["final_cash"],
-            "arrive_day": result["arrive_day"],
-            "path": result["path"],
-            "daily": result["daily"],
-            "purchases": result["purchases"],
-            "generated_at": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
-        }
-        result["generated_at"] = LAST_SOLUTION["generated_at"]
-    
     return jsonify(result)
 
 def solve_milp(payload: dict):
@@ -349,8 +149,7 @@ def solve_milp(payload: dict):
     refund = InvW[D] * (refund_factor * prices["water"]) + InvF[D] * (refund_factor * prices["food"])
     prob += Cash[D] + refund, "FinalCash"
 
-    # Use timeLimit instead of maxSeconds (fix for PuLP compatibility)
-    solver = pulp.PULP_CBC_CMD(msg=0, timeLimit=60)
+    solver = pulp.PULP_CBC_CMD(msg=0, maxSeconds=60)
     prob.solve(solver)
 
     status = pulp.LpStatus[prob.status]
@@ -370,7 +169,7 @@ def solve_milp(payload: dict):
             if (pulp.value(x[d][i]) or 0) > 0.5: loc = i; break
         for i in V:
             if (pulp.value(x[d-1][i]) or 0) > 0.5: prev = i; break
-        action = "STAY"; moved_to = None; moved_from = None; mined = False
+        action = "STAY"; moved_to = None; moved_from = None
         if weather[d-1] != "Storm":
             for i in V:
                 for j in NEI[i]:
@@ -381,7 +180,6 @@ def solve_milp(payload: dict):
         if action == "STAY":
             if (d, loc) in mine and (pulp.value(mine[(d,loc)]) or 0) > 0.5:
                 action = "MINE"
-                mined = True
         bw = sum(pulp.value(buyW[(d,i)]) or 0 for i in villages) if villages else 0
         bf = sum(pulp.value(buyF[(d,i)]) or 0 for i in villages) if villages else 0
         if bw>0 or bf>0:
@@ -394,7 +192,7 @@ def solve_milp(payload: dict):
         weight_peak = max(weight_peak, weight)
         daily.append({"day":d,"weather":weather[d-1],"location":loc,
                       "moved_from":moved_from,"moved_to":moved_to,
-                      "action":action,"mine":mined,"buyW":bw,"buyF":bf,
+                      "action":action,"buyW":bw,"buyF":bf,
                       "invW":invW,"invF":invF,"cash":cash})
     path = [next(i for i in V if (pulp.value(x[d][i]) or 0) > 0.5) for d in range(0, D+1)]
 

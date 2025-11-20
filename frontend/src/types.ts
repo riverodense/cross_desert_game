@@ -36,6 +36,7 @@ export interface SolveResponse {
     moved_from?:number;
     moved_to?:number;
     action:"MOVE"|"STAY"|"MINE";
+    mine?:boolean;
     buyW:number;
     buyF:number;
     invW:number;
@@ -47,4 +48,30 @@ export interface SolveResponse {
     start: { water:number; food:number; cost:number; };
     villages: Array<{ day:number; node:number; water:number; food:number; cost:number; }>;
   };
+  generated_at?: string;
+}
+
+export interface OptimalSolution {
+  status: string;
+  objective: number;
+  final_cash: number;
+  arrive_day: number;
+  path: number[];
+  daily: Array<{
+    day:number;
+    weather:Weather;
+    location:number;
+    action:"MOVE"|"STAY"|"MINE";
+    mine:boolean;
+    buyW:number;
+    buyF:number;
+    invW:number;
+    invF:number;
+    cash:number;
+  }>;
+  purchases: {
+    start: { water:number; food:number; cost:number; };
+    villages: Array<{ day:number; node:number; water:number; food:number; cost:number; }>;
+  };
+  generated_at: string;
 }
