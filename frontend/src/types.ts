@@ -29,6 +29,7 @@ export interface SolveResponse {
   refund: number;
   arrive_day: number;
   weight_peak: number;
+  generated_at?: string;
   daily: Array<{
     day:number;
     weather:Weather;
@@ -47,4 +48,14 @@ export interface SolveResponse {
     start: { water:number; food:number; cost:number; };
     villages: Array<{ day:number; node:number; water:number; food:number; cost:number; }>;
   };
+}
+
+export interface OptimalSolution {
+  generated_at: string;
+  objective: number;
+  final_cash: number;
+  arrive_day: number;
+  path: number[];
+  daily: SolveResponse['daily'];
+  purchases: SolveResponse['purchases'];
 }

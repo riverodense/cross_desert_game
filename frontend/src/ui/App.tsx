@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { HexGrid } from "./HexGrid";
 import { WeatherEditor } from "./WeatherEditor";
+import { PlayerPanel } from "./PlayerPanel";
 import { solve } from "../api";
 import type { CellType, SolveRequest, Weather } from "../types";
 
@@ -45,7 +46,7 @@ export const App: React.FC = () => {
   return (
     <div className="app">
       <div className="card">
-        <h2>地图设置</h2>
+        <h2>控制器视图 - 地图设置</h2>
         <div className="legend">
           <span className="desert">沙漠</span>
           <span className="village">村庄</span>
@@ -59,7 +60,7 @@ export const App: React.FC = () => {
       </div>
 
       <div className="card">
-        <h2>天气与求解</h2>
+        <h2>控制器视图 - 天气与求解</h2>
         <WeatherEditor weather={weather} setWeather={setWeather}/>
         <div className="flex" style={{marginTop:8}}>
           <button className="btn" onClick={onSolve} disabled={busy || mines.length===0}>求解（MILP）</button>
@@ -75,10 +76,17 @@ export const App: React.FC = () => {
             arrive_day: result.arrive_day,
             weight_peak: result.weight_peak
           }, null, 2)}</pre>
+          {result.generated_at && result.status === 'Optimal' && (
+            <div style={{marginTop: 8, padding: 8, background: '#e8f5e9', borderRadius: 8}}>
+              <strong>最优解生成时间:</strong> {result.generated_at}
+            </div>
+          )}
           <h3>每日行动</h3>
           <pre>{JSON.stringify(result.daily, null, 2)}</pre>
         </>)}
       </div>
+
+      <PlayerPanel />
     </div>
   );
 };
