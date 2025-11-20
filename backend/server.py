@@ -21,6 +21,7 @@ LAST_SOLUTION = None
 
 ROOT = Path(__file__).resolve().parents[1]
 <<<<<<< HEAD
+<<<<<<< HEAD
 CONFIG_PATH = ROOT / "game_config.json"
 
 # Use UTF-8-SIG so a BOM at the start doesn't break JSON parsing
@@ -63,6 +64,45 @@ GAME_CONFIG = {
     "show_model_to_players": True,
     "show_solution_to_players": False,
     "labels": {},
+=======
+
+# Compute adjacency for an 8x8 odd-r horizontal hex layout
+def compute_odd_r_adjacency(rows=8, cols=8):
+    """
+    Compute adjacency for odd-r horizontal hex layout.
+    Node ID = row * cols + col + 1 (1-indexed).
+    For even rows: neighbor deltas are [(-1,-1),(-1,0),(0,-1),(0,1),(1,-1),(1,0)]
+    For odd rows: neighbor deltas are [(-1,0),(-1,1),(0,-1),(0,1),(1,0),(1,1)]
+    """
+    adj = {}
+    for r in range(rows):
+        for c in range(cols):
+            node_id = r * cols + c + 1
+            neighbors = []
+            
+            # Determine neighbor deltas based on row parity
+            if r % 2 == 0:  # even row
+                deltas = [(-1,-1), (-1,0), (0,-1), (0,1), (1,-1), (1,0)]
+            else:  # odd row
+                deltas = [(-1,0), (-1,1), (0,-1), (0,1), (1,0), (1,1)]
+            
+            for dr, dc in deltas:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < rows and 0 <= nc < cols:
+                    neighbor_id = nr * cols + nc + 1
+                    neighbors.append(neighbor_id)
+            
+            adj[node_id] = sorted(neighbors)
+    
+    return adj
+
+# Use computed adjacency instead of loading from file
+NEI = compute_odd_r_adjacency(8, 8)
+
+# In-memory config storage (persists for the lifetime of the server)
+CONFIG = {
+    "instructions": "比赛说明：请参考题目文档。",
+>>>>>>> origin/copilot/implement-polish-updates-gameplay
     "params_default": {
         "deadline": 30,
         "initial_cash": 10000,
@@ -72,7 +112,10 @@ GAME_CONFIG = {
         "prices": {"water": 5, "food": 10},
         "mass": {"water": 3, "food": 2},
         "refund_factor": 0.5,
+<<<<<<< HEAD
         "base_income": 1000,
+=======
+>>>>>>> origin/copilot/implement-polish-updates-gameplay
         "base_consumption": {
             "Sunny": {"water": 5, "food": 7},
             "Hot": {"water": 8, "food": 6},
@@ -82,6 +125,7 @@ GAME_CONFIG = {
         "mine_multiplier": 2.5,
         "allow_storm_mining": True,
         "weather": ["Sunny"] * 30
+<<<<<<< HEAD
     },
     "countdown_seconds": 1800,
     "timer_started_at": None,
@@ -419,6 +463,32 @@ def api_controller_access_lock():
     save_config(config)
     
     return jsonify({"success": True, "lock": config["controller_lock"]})
+=======
+    }
+}
+
+@app.get("/api/adjacency")
+def api_adjacency():
+    """Return computed adjacency map."""
+    return jsonify(NEI)
+
+@app.get("/api/config/get")
+def api_config_get():
+    """Get current configuration including instructions and default parameters."""
+    return jsonify(CONFIG)
+
+@app.post("/api/config/update")
+def api_config_update():
+    """Update configuration (instructions and/or params_default)."""
+    data = request.get_json(force=True)
+    if "instructions" in data:
+        CONFIG["instructions"] = data["instructions"]
+    if "params_default" in data:
+        # Merge updates into params_default
+        for key, value in data["params_default"].items():
+            CONFIG["params_default"][key] = value
+    return jsonify({"status": "ok", "config": CONFIG})
+>>>>>>> origin/copilot/implement-polish-updates-gameplay
 
 @app.post("/api/solve")
 @require_controller_auth()

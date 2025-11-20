@@ -23,8 +23,13 @@ export const HexGrid: React.FC<{
   labels: Record<number, CellType>;
   setLabel: (id:number, next:CellType)=>void;
   path?: number[];
+<<<<<<< HEAD
   solutionEdges?: Array<[number, number]>;
 }> = ({ labels, setLabel, path = [], solutionEdges = [] }) => {
+=======
+  overlays?: any; // Optional overlays for controller view
+}> = ({ labels, setLabel, path = [], overlays }) => {
+>>>>>>> origin/copilot/implement-polish-updates-gameplay
   const hexes = useMemo(()=>{
     const arr:{id:number,q:number,r:number}[] = [];
     for (let r=0;r<8;r++) for (let q=0;q<8;q++) arr.push({id:r*8+q+1,q,r});
