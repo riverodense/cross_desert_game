@@ -1,8 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { resolve } from "path";
 
 export default defineConfig({
+  root: "frontend",
   plugins: [react()],
+  root: "frontend",
   server: {
     port: 5173,
     proxy: {
@@ -11,5 +14,13 @@ export default defineConfig({
         changeOrigin: true
       }
     }
-  }
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, "frontend/index.html"),
+        player: resolve(__dirname, "frontend/player.html"),
+      },
+    },
+  },
 });

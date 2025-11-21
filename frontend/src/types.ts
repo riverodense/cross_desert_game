@@ -21,6 +21,20 @@ export interface SolveRequest {
   weather: Weather[];
 }
 
+export interface DailyRecord {
+  day:number;
+  weather:Weather;
+  location:number;
+  moved_from?:number;
+  moved_to?:number;
+  action:"MOVE"|"STAY"|"MINE";
+  buyW:number;
+  buyF:number;
+  invW:number;
+  invF:number;
+  cash:number;
+}
+
 export interface SolveResponse {
   status: string;
   objective: number;
@@ -29,22 +43,21 @@ export interface SolveResponse {
   refund: number;
   arrive_day: number;
   weight_peak: number;
-  daily: Array<{
-    day:number;
-    weather:Weather;
-    location:number;
-    moved_from?:number;
-    moved_to?:number;
-    action:"MOVE"|"STAY"|"MINE";
-    buyW:number;
-    buyF:number;
-    invW:number;
-    invF:number;
-    cash:number;
-  }>;
+  daily: DailyRecord[];
   path:number[];
   purchases: {
     start: { water:number; food:number; cost:number; };
     villages: Array<{ day:number; node:number; water:number; food:number; cost:number; }>;
   };
+}
+
+export interface OptimalSolution {
+  daily: DailyRecord[];
+  purchases: {
+    start: { water:number; food:number; cost:number; };
+    villages: Array<{ day:number; node:number; water:number; food:number; cost:number; }>;
+  };
+  path: number[];
+  final_cash: number;
+  generated_at: number;
 }
