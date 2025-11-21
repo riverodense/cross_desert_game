@@ -4,14 +4,9 @@ from flask_cors import CORS
 from pathlib import Path
 import json
 import pulp
-<<<<<<< HEAD
 import time
 import secrets
 from functools import wraps
-=======
-from datetime import datetime
-import random
->>>>>>> origin/copilot/implement-adjustable-consumption-model
 
 app = Flask(__name__)
 CORS(app)
@@ -20,271 +15,35 @@ CORS(app)
 LAST_SOLUTION = None
 
 ROOT = Path(__file__).resolve().parents[1]
-<<<<<<< HEAD
-<<<<<<< HEAD
 CONFIG_PATH = ROOT / "game_config.json"
+SOLUTION_PATH = ROOT / "LAST_SOLUTION.json"
 
 # Use UTF-8-SIG so a BOM at the start doesn't break JSON parsing
 with open(ROOT / "adjacency.json", "r", encoding="utf-8-sig") as f:
     ADJ = json.load(f)
 NEI = {int(k): v for k, v in ADJ.items()}
-=======
 
-# Compute odd-r hex adjacency dynamically (8x8 grid, nodes 1-64)
-def compute_adjacency():
-    """Compute odd-r hex adjacency for 8x8 grid (nodes 1-64)"""
-    NEI = {}
-    for node in range(1, 65):
-        row = (node - 1) // 8
-        col = (node - 1) % 8
-        neighbors = []
-        
-        # odd-r coordinate system adjacency
-        if row % 2 == 0:  # even row
-            # E, W, NE, NW, SE, SW
-            offsets = [(0,1), (0,-1), (-1,0), (-1,-1), (1,0), (1,-1)]
-        else:  # odd row
-            offsets = [(0,1), (0,-1), (-1,1), (-1,0), (1,1), (1,0)]
-        
-        for dr, dc in offsets:
-            nr, nc = row + dr, col + dc
-            if 0 <= nr < 8 and 0 <= nc < 8:
-                neighbor_node = nr * 8 + nc + 1
-                neighbors.append(neighbor_node)
-        
-        NEI[node] = neighbors
-    return NEI
+# Load LAST_SOLUTION from disk on startup
+def load_solution():
+    """Load last solution from disk"""
+    global LAST_SOLUTION
+    if SOLUTION_PATH.exists():
+        try:
+            with open(SOLUTION_PATH, "r", encoding="utf-8") as f:
+                LAST_SOLUTION = json.load(f)
+                print(f"Loaded previous solution generated at: {LAST_SOLUTION.get('generated_at', 'unknown')}")
+        except Exception as e:
+            print(f"Could not load previous solution: {e}")
+            LAST_SOLUTION = None
 
-NEI = compute_adjacency()
-
-# Game configuration storage
-GAME_CONFIG = {
-    "instructions": "Desert Crossing Game - Maximize final cash by mining and trading",
-    "reveal_leaderboard": True,
-    "show_model_to_players": True,
-    "show_solution_to_players": False,
-    "labels": {},
-=======
-
-# Compute adjacency for an 8x8 odd-r horizontal hex layout
-def compute_odd_r_adjacency(rows=8, cols=8):
-    """
-    Compute adjacency for odd-r horizontal hex layout.
-    Node ID = row * cols + col + 1 (1-indexed).
-    For even rows: neighbor deltas are [(-1,-1),(-1,0),(0,-1),(0,1),(1,-1),(1,0)]
-    For odd rows: neighbor deltas are [(-1,0),(-1,1),(0,-1),(0,1),(1,0),(1,1)]
-    """
-    adj = {}
-    for r in range(rows):
-        for c in range(cols):
-            node_id = r * cols + c + 1
-            neighbors = []
-            
-            # Determine neighbor deltas based on row parity
-            if r % 2 == 0:  # even row
-                deltas = [(-1,-1), (-1,0), (0,-1), (0,1), (1,-1), (1,0)]
-            else:  # odd row
-                deltas = [(-1,0), (-1,1), (0,-1), (0,1), (1,0), (1,1)]
-            
-            for dr, dc in deltas:
-                nr, nc = r + dr, c + dc
-                if 0 <= nr < rows and 0 <= nc < cols:
-                    neighbor_id = nr * cols + nc + 1
-                    neighbors.append(neighbor_id)
-            
-            adj[node_id] = sorted(neighbors)
-    
-    return adj
-
-# Use computed adjacency instead of loading from file
-NEI = compute_odd_r_adjacency(8, 8)
-
-# In-memory config storage (persists for the lifetime of the server)
-CONFIG = {
-    "instructions": "比赛说明：请参考题目文档。",
->>>>>>> origin/copilot/implement-polish-updates-gameplay
-    "params_default": {
-        "deadline": 30,
-        "initial_cash": 10000,
-        "weight_limit_kg": 1200,
-        "start_node": 1,
-        "end_node": 64,
-        "prices": {"water": 5, "food": 10},
-        "mass": {"water": 3, "food": 2},
-        "refund_factor": 0.5,
-<<<<<<< HEAD
-        "base_income": 1000,
-=======
->>>>>>> origin/copilot/implement-polish-updates-gameplay
-        "base_consumption": {
-            "Sunny": {"water": 5, "food": 7},
-            "Hot": {"water": 8, "food": 6},
-            "Storm": {"water": 10, "food": 10}
-        },
-        "move_multiplier": 2.0,
-        "mine_multiplier": 2.5,
-        "allow_storm_mining": True,
-        "weather": ["Sunny"] * 30
-<<<<<<< HEAD
-    },
-    "countdown_seconds": 1800,
-    "timer_started_at": None,
-    "timer_running": False,
-}
-
-LEADERBOARD = []
-
-@app.get("/api/config")
-def api_get_config():
-    """Get current game configuration"""
-    config = GAME_CONFIG.copy()
-    if config["timer_started_at"] and config["timer_running"]:
-        elapsed = (datetime.now().timestamp() - config["timer_started_at"])
-        remaining = max(0, config["countdown_seconds"] - int(elapsed))
-        config["remaining_seconds"] = remaining
-    return jsonify(config)
-
-@app.post("/api/config")
-def api_update_config():
-    """Update game configuration"""
-    data = request.get_json(force=True)
-    for key in ["instructions", "reveal_leaderboard", "show_model_to_players", 
-                "show_solution_to_players", "labels", "params_default", "countdown_seconds"]:
-        if key in data:
-            GAME_CONFIG[key] = data[key]
-    return jsonify({"status": "ok", "config": GAME_CONFIG})
-
-@app.post("/api/timer/start")
-def api_start_timer():
-    """Start countdown timer"""
-    GAME_CONFIG["timer_started_at"] = datetime.now().timestamp()
-    GAME_CONFIG["timer_running"] = True
-    return jsonify({"status": "started", "started_at": GAME_CONFIG["timer_started_at"]})
-
-@app.post("/api/timer/stop")
-def api_stop_timer():
-    """Stop countdown timer"""
-    GAME_CONFIG["timer_running"] = False
-    return jsonify({"status": "stopped"})
-
-@app.post("/api/timer/reset")
-def api_reset_timer():
-    """Reset countdown timer"""
-    GAME_CONFIG["timer_started_at"] = None
-    GAME_CONFIG["timer_running"] = False
-    return jsonify({"status": "reset"})
-
-@app.get("/api/adjacency")
-def api_adjacency():
-    """Get hex adjacency map"""
-    return jsonify(NEI)
-
-@app.post("/api/weather/random")
-def api_random_weather():
-    """Generate random weather for 30 days"""
-    weathers = ["Sunny", "Hot", "Storm"]
-    # Weighted random: more Hot, less Storm
-    weights = [0.3, 0.5, 0.2]
-    random_weather = random.choices(weathers, weights=weights, k=30)
-    return jsonify({"weather": random_weather})
-
-@app.get("/api/latex/general")
-def api_latex_general():
-    """Get general MILP model in LaTeX"""
-    latex = r"""
-\begin{align*}
-\text{maximize} \quad & \text{Cash}_D + \text{refund} \\
-\text{subject to} \quad & x_{0,s} = 1, \quad x_{0,i} = 0 \quad \forall i \neq s \\
-& \text{Cash}_0 = C_0 - (b^0_W \cdot p_W + b^0_F \cdot p_F) \\
-& \text{Inv}_{W,0} = b^0_W, \quad \text{Inv}_{F,0} = b^0_F \\
-& m_W \cdot \text{Inv}_{W,0} + m_F \cdot \text{Inv}_{F,0} \leq W_{\max} \\
-\text{For each day } d \in \{1, \ldots, D\}: \\
-& \text{stay}_{d,i} + \sum_{j \in N(i)} \text{move}_{d,i,j} = x_{d-1,i} \quad \forall i \quad (\text{if no storm}) \\
-& x_{d,j} = \text{stay}_{d,j} + \sum_{i \in N(j)} \text{move}_{d,i,j} \quad \forall j \\
-& \sum_{i} x_{d,i} = 1 \\
-& \text{mine}_{d,i} \leq \text{stay}_{d,i} \quad \forall i \in \text{mines} \\
-& \text{mine}_{d,i} \leq 1 - \text{arrive}_{d,i} \quad \forall i \in \text{mines} \\
-& \text{Cons}_{W,d} = \sum_{\text{moves}} \alpha_m \cdot c_W^{\text{weather}[d]} + \sum_{\text{stays}} c_W^{\text{weather}[d]} + \sum_{\text{mines}} (\alpha_{mine}-1) \cdot c_W^{\text{weather}[d]} \\
-& \text{Cons}_{F,d} = \sum_{\text{moves}} \alpha_m \cdot c_F^{\text{weather}[d]} + \sum_{\text{stays}} c_F^{\text{weather}[d]} + \sum_{\text{mines}} (\alpha_{mine}-1) \cdot c_F^{\text{weather}[d]} \\
-& \text{Inv}_{W,d} = \text{Inv}_{W,d-1} + \sum_{i \in \text{villages}} b^d_{W,i} - \text{Cons}_{W,d} \\
-& \text{Inv}_{F,d} = \text{Inv}_{F,d-1} + \sum_{i \in \text{villages}} b^d_{F,i} - \text{Cons}_{F,d} \\
-& m_W \cdot \text{Inv}_{W,d} + m_F \cdot \text{Inv}_{F,d} \leq W_{\max} \\
-& \text{Cash}_d = \text{Cash}_{d-1} - \sum_{i \in \text{villages}} (2p_W \cdot b^d_{W,i} + 2p_F \cdot b^d_{F,i}) + \sum_{i \in \text{mines}} I_{\text{base}} \cdot \text{mine}_{d,i} \\
-& \text{Cash}_d \geq 0 \\
-\text{Terminal conditions:} \\
-& x_{D,e} = 1 \\
-& x_{d-1,e} \leq x_{d,e} \quad \forall d \in \{1, \ldots, D\} \\
-& \text{refund} = r \cdot (p_W \cdot \text{Inv}_{W,D} + p_F \cdot \text{Inv}_{F,D})
-\end{align*}
-
-\textbf{Parameter units:}
-\begin{itemize}
-\item $C_0$: Initial cash (¥)
-\item $p_W, p_F$: Water, food price (¥/unit)
-\item $m_W, m_F$: Water, food mass (kg/unit)
-\item $W_{\max}$: Weight limit (kg)
-\item $c_W^w, c_F^w$: Base consumption (Bottle, Unit) for weather $w$
-\item $I_{\text{base}}$: Mining base income (¥/day)
-\item $\alpha_m$: Move multiplier
-\item $\alpha_{mine}$: Mine multiplier
-\item $r$: Refund factor
-\end{itemize}
-"""
-    return jsonify({"latex": latex})
-
-@app.post("/api/latex/instance")
-def api_latex_instance():
-    """Get instantiated MILP model with specific parameters"""
-    data = request.get_json(force=True)
-    params = data.get("params", {})
-    
-    # Extract parameters with defaults
-    D = params.get("deadline", 30)
-    C0 = params.get("initial_cash", 10000)
-    pW = params.get("prices", {}).get("water", 5)
-    pF = params.get("prices", {}).get("food", 10)
-    mW = params.get("mass", {}).get("water", 3)
-    mF = params.get("mass", {}).get("food", 2)
-    Wmax = params.get("weight_limit_kg", 1200)
-    r = params.get("refund_factor", 0.5)
-    I_base = params.get("base_income", 1000)
-    base_cons = params.get("base_consumption", {})
-    alpha_m = params.get("move_multiplier", 2.0)
-    alpha_mine = params.get("mine_multiplier", 2.5)
-    
-    # Format consumption table
-    cons_table = "\\begin{tabular}{|l|c|c|}\n\\hline\n"
-    cons_table += "Weather & Water (Bottle) & Food (Unit) \\\\\n\\hline\n"
-    for w in ["Sunny", "Hot", "Storm"]:
-        cW = base_cons.get(w, {}).get("water", 0)
-        cF = base_cons.get(w, {}).get("food", 0)
-        cons_table += f"{w} & {cW} & {cF} \\\\\n"
-    cons_table += "\\hline\n\\end{tabular}"
-    
-    latex = f"""
-\\textbf{{Instance Parameters:}}
-\\begin{{itemize}}
-\\item Deadline $D = {D}$ days
-\\item Initial cash $C_0 = {C0}$ ¥
-\\item Weight limit $W_{{\\max}} = {Wmax}$ kg
-\\item Water: price $p_W = {pW}$ ¥/Bottle, mass $m_W = {mW}$ kg/Bottle
-\\item Food: price $p_F = {pF}$ ¥/Unit, mass $m_F = {mF}$ kg/Unit
-\\item Refund factor $r = {r}$
-\\item Mining base income $I_{{\\text{{base}}}} = {I_base}$ ¥/day
-\\item Move multiplier $\\alpha_m = {alpha_m}$
-\\item Mine multiplier $\\alpha_{{mine}} = {alpha_mine}$
-\\end{{itemize}}
-
-\\textbf{{Base Consumption per Day:}}
-
-{cons_table}
-
-\\textbf{{Village pricing:}} $2 \\times$ base price (water: {2*pW} ¥/Bottle, food: {2*pF} ¥/Unit)
-
-\\textbf{{Refund at end:}} ${r} \\times$ base price per remaining unit
-"""
-    return jsonify({"latex": latex})
->>>>>>> origin/copilot/implement-adjustable-consumption-model
+def save_solution():
+    """Save LAST_SOLUTION to disk"""
+    if LAST_SOLUTION is not None:
+        try:
+            with open(SOLUTION_PATH, "w", encoding="utf-8") as f:
+                json.dump(LAST_SOLUTION, f, indent=2)
+        except Exception as e:
+            print(f"Could not save solution: {e}")
 
 # Configuration management
 def load_config():
@@ -294,7 +53,8 @@ def load_config():
         config = {
             "controller_master_token": secrets.token_hex(16),
             "controller_tokens": [],
-            "controller_lock": False
+            "controller_lock": False,
+            "show_solution_to_players": False
         }
         save_config(config)
         return config
@@ -312,6 +72,8 @@ def load_config():
         config["controller_tokens"] = []
     if "controller_lock" not in config:
         config["controller_lock"] = False
+    if "show_solution_to_players" not in config:
+        config["show_solution_to_players"] = False
     
     return config
 
@@ -369,126 +131,53 @@ def require_controller_auth(master_required=False):
         return decorated_function
     return decorator
 
-# Access control endpoints
-@app.get("/api/controller/access/init")
-def api_controller_access_init():
-    """Initialize config and return master token. Public endpoint for first-time setup."""
+# API Endpoints
+
+@app.get("/api/config/get")
+def api_get_config():
+    """Get current game configuration (public parts)"""
     config = load_config()
     return jsonify({
-        "master_token": config["controller_master_token"],
-        "initialized": True
+        "show_solution_to_players": config.get("show_solution_to_players", False),
+        "controller_lock": config.get("controller_lock", False)
     })
 
-@app.post("/api/controller/access/check")
-def api_controller_access_check():
-    """Check if a token is valid."""
-    data = request.get_json(force=True)
-    token = data.get("token", "")
-    result = check_controller_auth(token)
-    return jsonify(result)
-
-@app.post("/api/controller/access/list")
-@require_controller_auth()
-def api_controller_access_list():
-    """List all tokens and lock status. Requires valid token."""
-    config = load_config()
-    token = request.headers.get("X-Controller-Token")
-    if not token:
-        data = request.get_json(silent=True)
-        if data:
-            token = data.get("token")
-    
-    auth_result = check_controller_auth(token)
-    
-    return jsonify({
-        "master_token": config["controller_master_token"] if auth_result["is_master"] else None,
-        "tokens": config["controller_tokens"],
-        "lock": config["controller_lock"],
-        "is_master": auth_result["is_master"]
-    })
-
-@app.post("/api/controller/access/add")
+@app.post("/api/config/update")
 @require_controller_auth(master_required=True)
-def api_controller_access_add():
-    """Add a new token. Requires master token."""
+def api_update_config():
+    """Update game configuration (controller only)"""
     data = request.get_json(force=True)
-    new_token = data.get("new_token", "").strip()
-    
-    if not new_token:
-        return jsonify({"error": "Token required"}), 400
-    
     config = load_config()
     
-    # Don't add if it's the master token or already exists
-    if new_token == config["controller_master_token"]:
-        return jsonify({"error": "Cannot add master token to list"}), 400
+    if "show_solution_to_players" in data:
+        config["show_solution_to_players"] = bool(data["show_solution_to_players"])
+    if "controller_lock" in data:
+        config["controller_lock"] = bool(data["controller_lock"])
     
-    if new_token in config["controller_tokens"]:
-        return jsonify({"error": "Token already exists"}), 400
-    
-    config["controller_tokens"].append(new_token)
     save_config(config)
-    
-    return jsonify({"success": True, "tokens": config["controller_tokens"]})
-
-@app.post("/api/controller/access/remove")
-@require_controller_auth(master_required=True)
-def api_controller_access_remove():
-    """Remove a token. Requires master token."""
-    data = request.get_json(force=True)
-    token_to_remove = data.get("token_to_remove", "")
-    
-    if not token_to_remove:
-        return jsonify({"error": "Token required"}), 400
-    
-    config = load_config()
-    
-    if token_to_remove not in config["controller_tokens"]:
-        return jsonify({"error": "Token not found"}), 404
-    
-    config["controller_tokens"].remove(token_to_remove)
-    save_config(config)
-    
-    return jsonify({"success": True, "tokens": config["controller_tokens"]})
-
-@app.post("/api/controller/access/lock")
-@require_controller_auth(master_required=True)
-def api_controller_access_lock():
-    """Toggle lock mode. Requires master token."""
-    data = request.get_json(force=True)
-    lock = data.get("lock", False)
-    
-    config = load_config()
-    config["controller_lock"] = bool(lock)
-    save_config(config)
-    
-    return jsonify({"success": True, "lock": config["controller_lock"]})
-=======
-    }
-}
+    return jsonify({"status": "ok", "config": config})
 
 @app.get("/api/adjacency")
 def api_adjacency():
-    """Return computed adjacency map."""
+    """Get adjacency map"""
     return jsonify(NEI)
 
-@app.get("/api/config/get")
-def api_config_get():
-    """Get current configuration including instructions and default parameters."""
-    return jsonify(CONFIG)
-
-@app.post("/api/config/update")
-def api_config_update():
-    """Update configuration (instructions and/or params_default)."""
-    data = request.get_json(force=True)
-    if "instructions" in data:
-        CONFIG["instructions"] = data["instructions"]
-    if "params_default" in data:
-        # Merge updates into params_default
-        for key, value in data["params_default"].items():
-            CONFIG["params_default"][key] = value
-    return jsonify({"status": "ok", "config": CONFIG})
->>>>>>> origin/copilot/implement-polish-updates-gameplay
+@app.get("/api/solution")
+def api_solution():
+    """Get the last optimal solution with timestamp"""
+    config = load_config()
+    
+    # Check if solution can be shown to players
+    token = request.headers.get("X-Controller-Token")
+    auth_result = check_controller_auth(token)
+    
+    if not auth_result["authorized"] and not config.get("show_solution_to_players", False):
+        return jsonify({"error": "Solution not available"}), 403
+    
+    if LAST_SOLUTION is None:
+        return jsonify({"error": "No solution available yet"}), 404
+    
+    return jsonify(LAST_SOLUTION)
 
 @app.post("/api/solve")
 @require_controller_auth()
@@ -500,6 +189,7 @@ def api_solve():
     # If optimal solution found, store it with timestamp
     if result.get("status") == "Optimal":
         LAST_SOLUTION = {
+            "status": "Optimal",
             "generated_at": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()),
             "objective": result["objective"],
             "final_cash": result["final_cash"],
@@ -509,46 +199,9 @@ def api_solve():
             "purchases": result["purchases"]
         }
         result["generated_at"] = LAST_SOLUTION["generated_at"]
+        save_solution()
     
     return jsonify(result)
-
-<<<<<<< HEAD
-@app.get("/api/solution")
-def api_solution():
-    """Get the last optimal solution with timestamp"""
-    if LAST_SOLUTION is None:
-        return jsonify({"error": "No optimal solution available yet"}), 404
-    return jsonify(LAST_SOLUTION)
-=======
-@app.post("/api/evaluate")
-def api_evaluate():
-    """Evaluate a player's plan"""
-    data = request.get_json(force=True)
-    result = evaluate_player_plan(data)
-    return jsonify(result)
-
-@app.get("/api/leaderboard")
-def api_get_leaderboard():
-    """Get leaderboard"""
-    return jsonify({"entries": LEADERBOARD})
-
-@app.post("/api/leaderboard")
-def api_submit_leaderboard():
-    """Submit entry to leaderboard"""
-    data = request.get_json(force=True)
-    entry = {
-        "id": str(len(LEADERBOARD) + 1),
-        "nickname": data.get("nickname", "Anonymous"),
-        "score": data.get("score", 0),
-        "final_cash": data.get("final_cash", 0),
-        "valid": data.get("valid", True),
-        "submitted_at": datetime.now().isoformat(),
-    }
-    LEADERBOARD.append(entry)
-    # Sort by score descending
-    LEADERBOARD.sort(key=lambda x: x["score"], reverse=True)
-    return jsonify({"status": "ok", "entry": entry})
->>>>>>> origin/copilot/implement-adjustable-consumption-model
 
 def solve_milp(payload: dict):
     D = int(payload.get("deadline", 30))
@@ -558,7 +211,6 @@ def solve_milp(payload: dict):
     weight_limit = float(payload["weight_limit_kg"]) 
     prices = payload["prices"]; mass = payload["mass"]
     refund_factor = float(payload["refund_factor"])
-    base_income = float(payload.get("base_income", 1000))
     base_cons = payload["base_consumption"]
     move_mult = float(payload["move_multiplier"])   # 2.0
     mine_mult = float(payload["mine_multiplier"])   # 2.5
@@ -673,7 +325,7 @@ def solve_milp(payload: dict):
         buyCost = 0
         if villages:
             buyCost = pulp.lpSum(buyW[(d,i)] * (2 * prices["water"]) + buyF[(d,i)] * (2 * prices["food"]) for i in villages)
-        income = pulp.lpSum(mine[(d,i)] * base_income for i in mines) if mines else 0
+        income = pulp.lpSum(mine[(d,i)] * 1000 for i in mines) if mines else 0
         prob += Cash[d] == Cash[d-1] - buyCost + income
         prob += Cash[d] >= 0
 
@@ -737,156 +389,104 @@ def solve_milp(payload: dict):
                                     "cost": start_cost},
                            "villages": purchases_v} }
 
-def evaluate_player_plan(payload: dict):
-    """Evaluate a player's submitted plan and return detailed violations"""
-    params = payload["params"]
-    path = payload["path"]
-    actions = payload["actions"]
-    start_buyW = payload["start_buyW"]
-    start_buyF = payload["start_buyF"]
-    
-    D = params["deadline"]
-    initial_cash = params["initial_cash"]
-    weight_limit = params["weight_limit_kg"]
-    prices = params["prices"]
-    mass = params["mass"]
-    refund_factor = params["refund_factor"]
-    base_income = params.get("base_income", 1000)
-    base_cons = params["base_consumption"]
-    move_mult = params["move_multiplier"]
-    mine_mult = params["mine_multiplier"]
-    weather = params["weather"]
-    mines = set(params.get("mines", []))
-    villages = set(params.get("villages", []))
-    
-    # Track state
-    invW = start_buyW
-    invF = start_buyF
-    cash = initial_cash - (start_buyW * prices["water"] + start_buyF * prices["food"])
-    
-    violations = []
-    daily_state = []
-    
-    # Check initial weight
-    init_weight = mass["water"] * invW + mass["food"] * invF
-    if init_weight > weight_limit:
-        violations.append(f"Day 0: Initial weight {init_weight:.1f} kg exceeds limit {weight_limit} kg")
-    
-    if cash < 0:
-        violations.append(f"Day 0: Insufficient initial cash (needed {start_buyW * prices['water'] + start_buyF * prices['food']}¥, had {initial_cash}¥)")
-    
-    daily_state.append({
-        "day": 0,
-        "location": path[0] if len(path) > 0 else None,
-        "invW": invW,
-        "invF": invF,
-        "cash": cash,
-        "weight": init_weight,
-        "violations": []
+def build_general_latex(params: dict) -> str:
+    """Build comprehensive MILP formulation LaTeX with dynamic weather."""
+    D = params.get("deadline", 30)
+    weather = params.get("weather", ["Sunny"] * 30)
+    base_cons = params.get("base_consumption", {
+        "Sunny": {"water": 5, "food": 7},
+        "Hot": {"water": 8, "food": 6},
+        "Storm": {"water": 10, "food": 10}
     })
+    move_mult = params.get("move_multiplier", 2.0)
+    mine_mult = params.get("mine_multiplier", 2.5)
+    prices = params.get("prices", {"water": 5, "food": 10})
+    mass = params.get("mass", {"water": 3, "food": 2})
+    initial_cash = params.get("initial_cash", 10000)
+    weight_limit = params.get("weight_limit_kg", 1200)
+    refund_factor = params.get("refund_factor", 0.5)
     
-    # Simulate each day
-    for d in range(1, D + 1):
-        day_violations = []
-        prev_loc = path[d-1] if d-1 < len(path) else None
-        curr_loc = path[d] if d < len(path) else None
-        w = weather[d-1]
-        
-        # Find action for this day
-        action = next((a for a in actions if a["day"] == d), {"buyW": 0, "buyF": 0, "mine": False})
-        
-        # Check movement
-        moved = prev_loc != curr_loc
-        if moved and w == "Storm":
-            day_violations.append(f"Illegal movement during storm")
-        if moved and prev_loc and curr_loc and curr_loc not in NEI.get(prev_loc, []):
-            day_violations.append(f"Invalid move from {prev_loc} to {curr_loc} (not adjacent)")
-        
-        # Check mining constraints
-        if action.get("mine", False):
-            if curr_loc not in mines:
-                day_violations.append(f"Cannot mine at non-mine location {curr_loc}")
-            if moved:
-                day_violations.append(f"Cannot mine on arrival day")
-        
-        # Check village purchases
-        buyW = action.get("buyW", 0)
-        buyF = action.get("buyF", 0)
-        if (buyW > 0 or buyF > 0) and curr_loc not in villages:
-            day_violations.append(f"Cannot purchase at non-village location {curr_loc}")
-        
-        # Calculate consumption
-        bw = base_cons[w]["water"]
-        bf = base_cons[w]["food"]
-        if moved:
-            consW = move_mult * bw
-            consF = move_mult * bf
-        else:
-            consW = bw
-            consF = bf
-        
-        if action.get("mine", False):
-            consW += (mine_mult - 1.0) * bw
-            consF += (mine_mult - 1.0) * bf
-        
-        # Update inventory
-        invW += buyW - consW
-        invF += buyF - consF
-        
-        # Check inventory non-negative
-        if invW < 0:
-            day_violations.append(f"Water shortage: {invW:.1f} Bottles")
-        if invF < 0:
-            day_violations.append(f"Food shortage: {invF:.1f} Units")
-        
-        # Check weight limit
-        weight = mass["water"] * max(0, invW) + mass["food"] * max(0, invF)
-        if weight > weight_limit:
-            day_violations.append(f"Weight {weight:.1f} kg exceeds limit {weight_limit} kg")
-        
-        # Update cash
-        purchase_cost = buyW * (2 * prices["water"]) + buyF * (2 * prices["food"])
-        mining_income = base_income if action.get("mine", False) else 0
-        cash = cash - purchase_cost + mining_income
-        
-        if cash < 0:
-            day_violations.append(f"Cash deficit: {cash:.1f}¥")
-        
-        violations.extend([f"Day {d}: {v}" for v in day_violations])
-        daily_state.append({
-            "day": d,
-            "location": curr_loc,
-            "weather": w,
-            "action": "MINE" if action.get("mine", False) else ("MOVE" if moved else "STAY"),
-            "buyW": buyW,
-            "buyF": buyF,
-            "consW": consW,
-            "consF": consF,
-            "invW": invW,
-            "invF": invF,
-            "cash": cash,
-            "weight": weight,
-            "violations": day_violations
-        })
+    # Build weather string for display
+    weather_str = ", ".join([f"d_{{{i+1}}}={w[:2]}" for i, w in enumerate(weather[:10])]) + ", \\ldots"
     
-    # Check terminal condition
-    end_node = params.get("end_node", 64)
-    if path[-1] != end_node:
-        violations.append(f"Did not reach end node {end_node} (ended at {path[-1]})")
+    latex = r"""\begin{align*}
+\textbf{Variables:} \\
+& x_{d,i} \in \{0,1\} \quad \forall d \in [0,D], i \in V \quad \text{(位置)} \\
+& \text{stay}_{d,i} \in \{0,1\} \quad \forall d \in [1,D], i \in V \quad \text{(停留)} \\
+& m_{d,i,j} \in \{0,1\} \quad \forall d \in [1,D], (i,j) \in E \quad \text{(移动, 非沙暴日)} \\
+& \text{mine}_{d,i} \in \{0,1\} \quad \forall d \in [1,D], i \in M \quad \text{(挖矿)} \\
+& \text{buyW}_0, \text{buyF}_0 \in \mathbb{Z}_+ \quad \text{(第0天购买)} \\
+& \text{buyW}_{d,i}, \text{buyF}_{d,i} \in \mathbb{Z}_+ \quad \forall d \in [1,D], i \in V_{\text{vil}} \quad \text{(村庄购买)} \\
+& \text{InvW}_d, \text{InvF}_d \in \mathbb{Z}_+ \quad \forall d \in [0,D] \quad \text{(库存)} \\
+& \text{Cash}_d \in \mathbb{R}_+ \quad \forall d \in [0,D] \quad \text{(现金)} \\
+\\
+\textbf{Objective:} \\
+& \max \quad \text{Cash}_D + """ + f"{refund_factor}" + r""" \times (""" + f"{prices['water']}" + r""" \cdot \text{InvW}_D + """ + f"{prices['food']}" + r""" \cdot \text{InvF}_D) \\
+\\
+\textbf{Constraints:} \\
+& x_{0,1} = 1, \quad x_{0,i} = 0 \; \forall i \neq 1 \quad \text{(起点)} \\
+& x_{D,64} = 1, \quad x_{d-1,64} \leq x_{d,64} \; \forall d \in [1,D] \quad \text{(终点)} \\
+& \sum_{i \in V} x_{d,i} = 1 \quad \forall d \in [0,D] \quad \text{(唯一位置)} \\
+\\
+& \text{若第d天非沙暴:} \quad \text{stay}_{d,i} + \sum_{j \in N(i)} m_{d,i,j} = x_{d-1,i} \quad \forall i \in V \\
+& \qquad\qquad\qquad x_{d,j} = \text{stay}_{d,j} + \sum_{i \in N(j)} m_{d,i,j} \quad \forall j \in V \\
+& \text{若第d天沙暴:} \quad \text{stay}_{d,i} = x_{d-1,i} \quad \forall i \in V \\
+\\
+& \text{mine}_{d,i} \leq \text{stay}_{d,i} \quad \forall d \in [1,D], i \in M \\
+& \text{mine}_{d,i} \leq 1 - \text{arrive}_{d,i}, \quad \text{arrive}_{d,i} \geq x_{d,i} - x_{d-1,i} \quad \text{(到达当日禁挖)} \\
+\\
+& \text{buyW}_{d,i}, \text{buyF}_{d,i} \leq BIG \cdot x_{d,i} \quad \forall d \in [1,D], i \in V_{\text{vil}} \\
+\\
+& \text{Cash}_0 = """ + f"{initial_cash}" + r""" - (""" + f"{prices['water']}" + r""" \cdot \text{buyW}_0 + """ + f"{prices['food']}" + r""" \cdot \text{buyF}_0) \\
+& \text{InvW}_0 = \text{buyW}_0, \quad \text{InvF}_0 = \text{buyF}_0 \\
+& """ + f"{mass['water']}" + r""" \cdot \text{InvW}_0 + """ + f"{mass['food']}" + r""" \cdot \text{InvF}_0 \leq """ + f"{weight_limit}" + r""" \\
+\\
+& \text{消耗公式 (第d天):} \\
+& \quad \text{consW}_d = \sum_{i \in V} \text{stay}_{d,i} \cdot b^w_d + """ + f"{move_mult}" + r""" \cdot \sum_{(i,j) \in E} m_{d,i,j} \cdot b^w_d \\
+& \qquad\qquad\qquad + """ + f"({mine_mult}-1)" + r""" \cdot \sum_{i \in M} \text{mine}_{d,i} \cdot b^w_d \\
+& \quad \text{consF}_d = \sum_{i \in V} \text{stay}_{d,i} \cdot b^f_d + """ + f"{move_mult}" + r""" \cdot \sum_{(i,j) \in E} m_{d,i,j} \cdot b^f_d \\
+& \qquad\qquad\qquad + """ + f"({mine_mult}-1)" + r""" \cdot \sum_{i \in M} \text{mine}_{d,i} \cdot b^f_d \\
+& \quad \text{其中 } b^w_d, b^f_d \text{ 为第d天天气基础消耗 (""" + weather_str + r""")} \\
+\\
+& \text{InvW}_d = \text{InvW}_{d-1} + \sum_{i \in V_{\text{vil}}} \text{buyW}_{d,i} - \text{consW}_d \quad \forall d \in [1,D] \\
+& \text{InvF}_d = \text{InvF}_{d-1} + \sum_{i \in V_{\text{vil}}} \text{buyF}_{d,i} - \text{consF}_d \quad \forall d \in [1,D] \\
+& \text{InvW}_d, \text{InvF}_d \geq 0, \quad """ + f"{mass['water']}" + r""" \cdot \text{InvW}_d + """ + f"{mass['food']}" + r""" \cdot \text{InvF}_d \leq """ + f"{weight_limit}" + r""" \quad \forall d \in [1,D] \\
+\\
+& \text{Cash}_d = \text{Cash}_{d-1} - \sum_{i \in V_{\text{vil}}} (""" + f"{2*prices['water']}" + r""" \cdot \text{buyW}_{d,i} + """ + f"{2*prices['food']}" + r""" \cdot \text{buyF}_{d,i}) \\
+& \qquad\qquad + \sum_{i \in M} 1000 \cdot \text{mine}_{d,i} \quad \forall d \in [1,D] \\
+& \text{Cash}_d \geq 0 \quad \forall d \in [1,D] \quad \text{(不可透支)}
+\end{align*}"""
     
-    # Calculate final score
-    refund = refund_factor * (prices["water"] * max(0, invW) + prices["food"] * max(0, invF))
-    final_cash = max(0, cash) + refund
-    
-    return {
-        "valid": len(violations) == 0,
-        "violations": violations,
-        "daily_state": daily_state,
-        "final_cash": final_cash,
-        "cash_before_refund": cash,
-        "refund": refund,
-        "score": final_cash if len(violations) == 0 else 0
-    }
+    return latex
+
+@app.get("/api/latex")
+def api_latex():
+    """Return MILP formulation as LaTeX, with optional weather parameter."""
+    params = request.args.to_dict()
+    if "weather" in params:
+        import json as js
+        params["weather"] = js.loads(params["weather"])
+    if "base_consumption" in params:
+        import json as js
+        params["base_consumption"] = js.loads(params["base_consumption"])
+    if "prices" in params:
+        import json as js
+        params["prices"] = js.loads(params["prices"])
+    if "mass" in params:
+        import json as js
+        params["mass"] = js.loads(params["mass"])
+    latex = build_general_latex(params)
+    return jsonify({"latex": latex})
+
 
 if __name__ == "__main__":
+    # Load previous solution on startup
+    load_solution()
+    
+    # Load or create config
+    config = load_config()
+    print(f"=== Desert Crossing Game Server ===")
+    print(f"Controller Master Token: {config['controller_master_token']}")
+    print(f"Server starting on http://0.0.0.0:8000")
+    
     app.run(host="0.0.0.0", port=8000, debug=False)
