@@ -17,7 +17,6 @@ export const ModelDisplay: React.FC<ModelDisplayProps> = ({ params, show = true,
   const [data, setData] = useState<{ latex_general: string; latex_instantiated: string } | null>(null);
   const [view, setView] = useState<"general" | "instance">("general");
 
-  // Force-refresh model when any param changes (including weather/base consumption)
   useEffect(() => {
     if (!show) return;
     getModel(params as any).then(setData);
@@ -53,7 +52,6 @@ export const ModelDisplay: React.FC<ModelDisplayProps> = ({ params, show = true,
   if (!show) return null;
   if (role === "player" && !playersCanSee) return null;
 
-  // Parameter summary table for instance view (players can see too)
   const p = params as any;
   const paramTable = (
     <table style={{ borderCollapse:"collapse", width:"100%", fontSize:12, marginTop:12 }}>
@@ -117,7 +115,6 @@ function btn(active: boolean): React.CSSProperties {
     boxShadow: active ? "0 0 0 3px rgba(25,118,210,.35)" : "0 2px 4px rgba(0,0,0,0.2)"
   };
 }
-
 const th: React.CSSProperties = {
   border: "1px solid #ddd",
   padding: "4px 6px",

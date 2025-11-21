@@ -1,12 +1,20 @@
-﻿<!doctype html>
-<html lang="zh-CN">
+<!doctype html>
+<html lang="zh">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Desert Crossing 交互建模</title>
+    <title>沙漠穿越竞赛平台</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <!-- MathJax for LaTeX rendering -->
+    <script>
+      window.MathJax = {
+        tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$','$$'], ['\\[','\\]']] },
+        svg: { fontCache: 'global' }
+      };
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/frontend/src/main.tsx"></script>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
