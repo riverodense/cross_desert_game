@@ -1,181 +1,143 @@
 import React, { useState, useEffect } from "react";
-import { listTokens, addToken, removeToken, setLock } from "../api";
+import * as api from "../api";
 
-interface AccessControlPanelProps {
-  onAuthLost?: () => void;
-}
-
-export const AccessControlPanel: React.FC<AccessControlPanelProps> = ({ onAuthLost }) => {
-  const [masterToken, setMasterToken] = useState<string | null>(null);
+export function AccessControlPanel() {
+  const [masterToken, setMasterToken] = useState("");
   const [tokens, setTokens] = useState<string[]>([]);
-  const [locked, setLocked] = useState(false);
-  const [isMaster, setIsMaster] = useState(false);
+  const [lock, setLock] = useState(false);
+  const [newToken, setNewToken] = useState("");
   const [showMaster, setShowMaster] = useState(false);
-  const [newTokenInput, setNewTokenInput] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const loadData = async () => {
-    try {
-      setError("");
-      const data = await listTokens();
-      setMasterToken(data.master_token);
-      setTokens(data.tokens);
-      setLocked(data.lock);
-      setIsMaster(data.is_master);
-      setLoading(false);
-    } catch (err: any) {
-      setError(err.message);
-      setLoading(false);
-      if (err.message.includes("403") || err.message.includes("Unauthorized")) {
-        onAuthLost?.();
-      }
-    }
-  };
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
-    loadData();
+    loadTokens();
   }, []);
 
-  const handleAddToken = async () => {
-    if (!newTokenInput.trim()) {
-      setError("Token cannot be empty");
+  async function loadTokens() {
+    try {
+      const data = await api.listTokens();
+      setMasterToken(data.master_token || "");
+      setTokens(data.tokens || []);
+      setLock(data.lock || false);
+    } catch (err: any) {
+      setMessage(`Failed to load tokens: ${err.message}`);
+    }
+  }
+
+  async function handleAddToken() {
+    if (!newToken.trim()) {
+      setMessage("Token cannot be empty");
       return;
     }
     try {
-      setError("");
-      await addToken(newTokenInput.trim());
-      setNewTokenInput("");
-      await loadData();
+      await api.addToken(newToken.trim());
+      setMessage("Token added successfully");
+      setNewToken("");
+      await loadTokens();
     } catch (err: any) {
-      setError(err.message);
+      setMessage(`Failed to add token: ${err.message}`);
     }
-  };
+  }
 
-  const handleRemoveToken = async (token: string) => {
+  async function handleRemoveToken(token: string) {
     try {
-      setError("");
-      await removeToken(token);
-      await loadData();
+      await api.removeToken(token);
+      setMessage("Token removed successfully");
+      await loadTokens();
     } catch (err: any) {
-      setError(err.message);
+      setMessage(`Failed to remove token: ${err.message}`);
     }
-  };
+  }
 
-  const handleToggleLock = async () => {
+  async function handleToggleLock() {
     try {
-      setError("");
-      await setLock(!locked);
-      await loadData();
+      await api.setLock(!lock);
+      setLock(!lock);
+      setMessage(`Lock ${!lock ? "enabled" : "disabled"}`);
     } catch (err: any) {
-      setError(err.message);
+      setMessage(`Failed to toggle lock: ${err.message}`);
     }
-  };
+  }
 
-  const copyToClipboard = (text: string) => {
+  function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text);
-    alert("Copied to clipboard!");
-  };
-
-  if (loading) {
-    return <div className="card"><p>Loading access control...</p></div>;
+    setMessage("Copied to clipboard!");
   }
 
   return (
-    <div className="card">
-      <h2>访问控制</h2>
+    <div style={{ padding: "20px", border: "1px solid #ccc", borderRadius: "5px", marginTop: "20px" }}>
+      <h3>Access Control</h3>
       
-      {error && <div style={{color: "var(--bad)", marginBottom: 8}}>{error}</div>}
-      
-      {isMaster && masterToken && (
-        <div style={{marginBottom: 16}}>
-          <h3>主令牌 (Master Token)</h3>
-          <div className="flex" style={{gap: 8}}>
-            <input
-              type={showMaster ? "text" : "password"}
-              value={masterToken}
-              readOnly
-              style={{flex: 1, fontFamily: "monospace"}}
-            />
-            <button className="btn" onClick={() => setShowMaster(!showMaster)}>
-              {showMaster ? "隐藏" : "显示"}
-            </button>
-            <button className="btn" onClick={() => copyToClipboard(masterToken)}>
-              复制
-            </button>
-          </div>
-          <p style={{fontSize: "0.9em", color: "#666"}}>
-            主令牌拥有所有权限，请妥善保管。
-          </p>
+      {message && (
+        <div style={{ padding: "10px", background: "#e7f3ff", border: "1px solid #b3d9ff", borderRadius: "3px", marginBottom: "10px" }}>
+          {message}
         </div>
       )}
 
-      <div style={{marginBottom: 16}}>
-        <h3>锁定模式</h3>
-        <div className="flex" style={{gap: 8, alignItems: "center"}}>
-          <label>
-            <input
-              type="checkbox"
-              checked={locked}
-              onChange={handleToggleLock}
-              disabled={!isMaster}
-            />
-            {" "}启用紧急锁定
-          </label>
+      <div style={{ marginBottom: "20px" }}>
+        <h4>Master Token</h4>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <input
+            type={showMaster ? "text" : "password"}
+            value={masterToken}
+            readOnly
+            style={{ flex: 1, padding: "5px", fontFamily: "monospace" }}
+          />
+          <button onClick={() => setShowMaster(!showMaster)}>
+            {showMaster ? "Hide" : "Reveal"}
+          </button>
+          <button onClick={() => copyToClipboard(masterToken)}>
+            Copy
+          </button>
         </div>
-        <p style={{fontSize: "0.9em", color: "#666"}}>
-          启用后，只有主令牌可以访问控制器界面。
+        <p style={{ fontSize: "0.9em", color: "#666", marginTop: "5px" }}>
+          Master token has full access and cannot be revoked.
         </p>
       </div>
 
-      {isMaster && (
-        <div style={{marginBottom: 16}}>
-          <h3>令牌管理</h3>
-          <div className="flex" style={{gap: 8, marginBottom: 8}}>
-            <input
-              type="text"
-              placeholder="输入新令牌"
-              value={newTokenInput}
-              onChange={(e) => setNewTokenInput(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && handleAddToken()}
-              style={{flex: 1}}
-            />
-            <button className="btn" onClick={handleAddToken}>
-              添加令牌
-            </button>
-          </div>
-          
-          <div>
-            <strong>已授权令牌 ({tokens.length})</strong>
-            {tokens.length === 0 ? (
-              <p style={{color: "#666"}}>暂无令牌</p>
-            ) : (
-              <ul style={{listStyle: "none", padding: 0}}>
-                {tokens.map((token, idx) => (
-                  <li key={idx} style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "8px",
-                    marginBottom: "4px",
-                    backgroundColor: "#f5f5f5",
-                    borderRadius: "4px"
-                  }}>
-                    <code style={{fontFamily: "monospace", fontSize: "0.9em"}}>{token}</code>
-                    <button
-                      className="btn"
-                      onClick={() => handleRemoveToken(token)}
-                      style={{padding: "4px 8px", fontSize: "0.9em"}}
-                    >
-                      撤销
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+      <div style={{ marginBottom: "20px" }}>
+        <h4>Emergency Lock</h4>
+        <label style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <input
+            type="checkbox"
+            checked={lock}
+            onChange={handleToggleLock}
+          />
+          <span>Lock controller access (only master token allowed)</span>
+        </label>
+        <p style={{ fontSize: "0.9em", color: "#666", marginTop: "5px" }}>
+          When locked, all regular tokens are disabled. Only the master token can access controller functions.
+        </p>
+      </div>
+
+      <div>
+        <h4>Regular Tokens</h4>
+        <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+          <input
+            type="text"
+            placeholder="Enter new token..."
+            value={newToken}
+            onChange={(e) => setNewToken(e.target.value)}
+            style={{ flex: 1, padding: "5px" }}
+          />
+          <button onClick={handleAddToken}>Add Token</button>
         </div>
-      )}
+
+        {tokens.length === 0 ? (
+          <p style={{ color: "#999", fontStyle: "italic" }}>No regular tokens added yet.</p>
+        ) : (
+          <ul style={{ listStyle: "none", padding: 0 }}>
+            {tokens.map((token, idx) => (
+              <li key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px", background: "#f5f5f5", marginBottom: "5px", borderRadius: "3px" }}>
+                <code style={{ flex: 1 }}>{token}</code>
+                <button onClick={() => handleRemoveToken(token)} style={{ marginLeft: "10px" }}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
-};
+}

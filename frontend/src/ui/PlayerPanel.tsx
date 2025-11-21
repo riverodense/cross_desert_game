@@ -1,291 +1,282 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
-import { LineChart, DataSeries } from "./LineChart";
-import type { SolveResponse, Weather } from "../types";
+import React, { useState, useEffect } from "react";
+import * as api from "../api";
+import type { OptimalSolution, DailyRecord } from "../types";
 
 interface PlayerPanelProps {
-  playerSolution: SolveResponse | null;
-  optimalSolution: SolveResponse | null;
-  weather: Weather[];
+  playerSolution?: DailyRecord[];
 }
 
-interface AnalyticsData {
-  cashDiff: number[];
-  waterDiff: number[];
-  foodDiff: number[];
-  cumulativeCashDiff: number[];
-}
+export function PlayerPanel({ playerSolution }: PlayerPanelProps) {
+  const [optimalSolution, setOptimalSolution] = useState<OptimalSolution | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showDiff, setShowDiff] = useState(false);
 
-export const PlayerPanel: React.FC<PlayerPanelProps> = ({
-  playerSolution,
-  optimalSolution,
-  weather
-}) => {
-  const [showCashDiff, setShowCashDiff] = useState(true);
-  const [showWaterDiff, setShowWaterDiff] = useState(true);
-  const [showFoodDiff, setShowFoodDiff] = useState(true);
-  const [showCumulativeCash, setShowCumulativeCash] = useState(false);
-  const [debouncedToggles, setDebouncedToggles] = useState({
-    cashDiff: true,
-    waterDiff: true,
-    foodDiff: true,
-    cumulativeCash: false
-  });
-
-  // Debounce toggle updates to avoid recalculating too frequently
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      setDebouncedToggles({
-        cashDiff: showCashDiff,
-        waterDiff: showWaterDiff,
-        foodDiff: showFoodDiff,
-        cumulativeCash: showCumulativeCash
-      });
-    }, 250);
+    loadOptimalSolution();
+  }, []);
 
-    return () => clearTimeout(timeoutId);
-  }, [showCashDiff, showWaterDiff, showFoodDiff, showCumulativeCash]);
-
-  // Calculate analytics data
-  const analyticsData = useMemo<AnalyticsData | null>(() => {
-    if (!playerSolution || !optimalSolution) return null;
-
-    const minLength = Math.min(playerSolution.daily.length, optimalSolution.daily.length);
-    const cashDiff: number[] = [];
-    const waterDiff: number[] = [];
-    const foodDiff: number[] = [];
-    const cumulativeCashDiff: number[] = [];
-    let cumulativeSum = 0;
-
-    for (let i = 0; i < minLength; i++) {
-      const pDay = playerSolution.daily[i];
-      const oDay = optimalSolution.daily[i];
-
-      const cDiff = pDay.cash - oDay.cash;
-      const wDiff = pDay.invW - oDay.invW;
-      const fDiff = pDay.invF - oDay.invF;
-
-      cashDiff.push(cDiff);
-      waterDiff.push(wDiff);
-      foodDiff.push(fDiff);
-
-      cumulativeSum += cDiff;
-      cumulativeCashDiff.push(cumulativeSum);
+  async function loadOptimalSolution() {
+    try {
+      const solution = await api.getSolution();
+      setOptimalSolution(solution);
+      setError(null);
+    } catch (err: any) {
+      setError(err.message);
     }
+  }
 
-    return { cashDiff, waterDiff, foodDiff, cumulativeCashDiff };
-  }, [playerSolution, optimalSolution]);
+  function exportToCSV() {
+    if (!optimalSolution || !playerSolution) return;
 
-  // Prepare chart series
-  const chartSeries = useMemo<DataSeries[]>(() => {
-    if (!analyticsData) return [];
-
-    return [
-      {
-        name: "现金差",
-        color: "#1976d2",
-        data: analyticsData.cashDiff,
-        style: "solid" as const,
-        visible: debouncedToggles.cashDiff
-      },
-      {
-        name: "水差",
-        color: "#2e7d32",
-        data: analyticsData.waterDiff,
-        style: "solid" as const,
-        visible: debouncedToggles.waterDiff
-      },
-      {
-        name: "食物差",
-        color: "#ef6c00",
-        data: analyticsData.foodDiff,
-        style: "solid" as const,
-        visible: debouncedToggles.foodDiff
-      },
-      {
-        name: "累计现金差",
-        color: "#6a1b9a",
-        data: analyticsData.cumulativeCashDiff,
-        style: "dashed" as const,
-        visible: debouncedToggles.cumulativeCash
-      }
+    const headers = [
+      "Day", "Weather", "Optimal_Location", "Player_Location",
+      "Optimal_Action", "Player_Action", "Optimal_Mine", "Player_Mine",
+      "Optimal_Cash", "Player_Cash", "Cash_Diff",
+      "Optimal_Water", "Player_Water", "Water_Diff",
+      "Optimal_Food", "Player_Food", "Food_Diff",
+      "Cumulative_Cash_Diff"
     ];
-  }, [analyticsData, debouncedToggles]);
 
-  // Export CSV
-  const handleExportCSV = useCallback(() => {
-    if (!playerSolution || !optimalSolution || !analyticsData) return;
+    let cumulativeCashDiff = 0;
+    const rows = optimalSolution.daily.map((opt, i) => {
+      const player = playerSolution[i];
+      if (!player) return null;
 
-    const minLength = Math.min(playerSolution.daily.length, optimalSolution.daily.length);
-    const lines: string[] = [];
+      const cashDiff = player.cash - opt.cash;
+      const waterDiff = player.invW - opt.invW;
+      const foodDiff = player.invF - opt.invF;
+      cumulativeCashDiff += cashDiff;
 
-    // Add metadata as first line
-    const timestamp = new Date().toISOString();
-    lines.push(`# optimal_generated_at=${timestamp}`);
+      return [
+        opt.day,
+        opt.weather,
+        opt.location,
+        player.location,
+        opt.action,
+        player.action,
+        opt.action === "MINE" ? 1 : 0,
+        player.action === "MINE" ? 1 : 0,
+        opt.cash.toFixed(2),
+        player.cash.toFixed(2),
+        cashDiff.toFixed(2),
+        opt.invW.toFixed(2),
+        player.invW.toFixed(2),
+        waterDiff.toFixed(2),
+        opt.invF.toFixed(2),
+        player.invF.toFixed(2),
+        foodDiff.toFixed(2),
+        cumulativeCashDiff.toFixed(2)
+      ].join(",");
+    }).filter(row => row !== null);
 
-    // Add header
-    lines.push([
-      "day",
-      "weather",
-      "player_location",
-      "optimal_location",
-      "player_action",
-      "optimal_action",
-      "player_cash",
-      "optimal_cash",
-      "diff_cash",
-      "cumulative_diff_cash",
-      "player_invW",
-      "optimal_invW",
-      "diff_invW",
-      "player_invF",
-      "optimal_invF",
-      "diff_invF",
-      "player_mine",
-      "optimal_mine"
-    ].join(","));
-
-    // Add data rows
-    for (let i = 0; i < minLength; i++) {
-      const pDay = playerSolution.daily[i];
-      const oDay = optimalSolution.daily[i];
-
-      lines.push([
-        pDay.day,
-        pDay.weather,
-        pDay.location,
-        oDay.location,
-        pDay.action,
-        oDay.action,
-        pDay.cash.toFixed(2),
-        oDay.cash.toFixed(2),
-        analyticsData.cashDiff[i].toFixed(2),
-        analyticsData.cumulativeCashDiff[i].toFixed(2),
-        pDay.invW,
-        oDay.invW,
-        analyticsData.waterDiff[i],
-        pDay.invF,
-        oDay.invF,
-        analyticsData.foodDiff[i],
-        pDay.action === "MINE" ? "1" : "0",
-        oDay.action === "MINE" ? "1" : "0"
-      ].join(","));
-    }
-
-    // Create download
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `analytics_${timestamp.slice(0, 19).replace(/:/g, "-")}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `desert_crossing_comparison_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
     URL.revokeObjectURL(url);
-  }, [playerSolution, optimalSolution, analyticsData]);
+  }
 
-  // Mining comparison
-  const miningComparison = useMemo(() => {
-    if (!playerSolution || !optimalSolution) return null;
+  if (error) {
+    return (
+      <div style={{ padding: "20px", border: "1px solid #fdd", background: "#fef", borderRadius: "5px" }}>
+        <h3>Player Panel</h3>
+        <p style={{ color: "#c00" }}>{error}</p>
+      </div>
+    );
+  }
 
-    const playerMiningDays = playerSolution.daily.filter(d => d.action === "MINE").length;
-    const optimalMiningDays = optimalSolution.daily.filter(d => d.action === "MINE").length;
-
-    return {
-      playerMiningDays,
-      optimalMiningDays,
-      difference: playerMiningDays - optimalMiningDays
-    };
-  }, [playerSolution, optimalSolution]);
-
-  // Don't show panel if no optimal solution
-  if (!optimalSolution) return null;
+  if (!optimalSolution) {
+    return (
+      <div style={{ padding: "20px", border: "1px solid #ddd", background: "#f9f9f9", borderRadius: "5px" }}>
+        <h3>Player Panel</h3>
+        <p>Loading optimal solution...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="card" style={{ marginTop: "16px" }}>
-      <h2>高级分析 (Advanced Analytics)</h2>
+    <div style={{ padding: "20px", border: "1px solid #4caf50", background: "#f0f8f0", borderRadius: "5px", marginTop: "20px" }}>
+      <h3>Player Panel</h3>
+      <div style={{ marginBottom: "10px" }}>
+        <p><strong>Optimal Solution Generated:</strong> {optimalSolution.generated_at}</p>
+        <p><strong>Status:</strong> {optimalSolution.status}</p>
+        <p><strong>Final Cash:</strong> ${optimalSolution.final_cash.toFixed(2)}</p>
+        <p><strong>Arrival Day:</strong> {optimalSolution.arrive_day}</p>
+      </div>
 
-      {!playerSolution && (
-        <p style={{ color: "#666" }}>请先输入玩家方案以查看对比分析。</p>
-      )}
-
-      {playerSolution && analyticsData && (
+      {playerSolution && (
         <>
-          {/* Toggle controls */}
-          <div className="flex" style={{ marginBottom: "12px", flexWrap: "wrap" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}>
+          <div style={{ marginBottom: "15px" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <input
                 type="checkbox"
-                checked={showCashDiff}
-                onChange={(e) => setShowCashDiff(e.target.checked)}
+                checked={showDiff}
+                onChange={(e) => setShowDiff(e.target.checked)}
               />
-              <span style={{ color: "#1976d2" }}>●</span>
-              <span>现金差</span>
+              <span>Show difference charts</span>
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={showWaterDiff}
-                onChange={(e) => setShowWaterDiff(e.target.checked)}
-              />
-              <span style={{ color: "#2e7d32" }}>●</span>
-              <span>水差</span>
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={showFoodDiff}
-                onChange={(e) => setShowFoodDiff(e.target.checked)}
-              />
-              <span style={{ color: "#ef6c00" }}>●</span>
-              <span>食物差</span>
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "4px", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={showCumulativeCash}
-                onChange={(e) => setShowCumulativeCash(e.target.checked)}
-              />
-              <span style={{ color: "#6a1b9a" }}>━━</span>
-              <span>累计现金差</span>
-            </label>
+            <button onClick={exportToCSV} style={{ marginTop: "10px" }}>
+              Export Comparison to CSV (18 columns)
+            </button>
           </div>
 
-          {/* Chart */}
-          <div style={{ marginBottom: "16px" }}>
-            <LineChart series={chartSeries} width={700} height={300} />
-          </div>
-
-          {/* Legend */}
-          <div style={{ marginBottom: "12px", fontSize: "12px", color: "#666" }}>
-            <div><span style={{ color: "#1976d2" }}>━━</span> 实线: 每日差值 (player - optimal)</div>
-            <div><span style={{ color: "#6a1b9a" }}>━━</span> 虚线: 累计差值</div>
-            <div>提示: 悬停查看详细数值 (移动端: 点击固定)</div>
-          </div>
-
-          {/* Mining comparison */}
-          {miningComparison && (
-            <div style={{ marginBottom: "12px", padding: "8px", background: "#f5f5f5", borderRadius: "4px" }}>
-              <h4 style={{ margin: "0 0 8px 0" }}>挖矿对比</h4>
-              <div>玩家挖矿天数: {miningComparison.playerMiningDays}</div>
-              <div>最优挖矿天数: {miningComparison.optimalMiningDays}</div>
-              <div style={{ 
-                color: miningComparison.difference > 0 ? "var(--ok)" : miningComparison.difference < 0 ? "var(--bad)" : "#666"
-              }}>
-                差异: {miningComparison.difference > 0 ? "+" : ""}{miningComparison.difference} 天
-              </div>
-            </div>
+          {showDiff && (
+            <>
+              <DifferenceCharts optimal={optimalSolution.daily} player={playerSolution} />
+              <MiningComparison optimal={optimalSolution.daily} player={playerSolution} />
+            </>
           )}
-
-          {/* Export button */}
-          <button 
-            className="btn" 
-            onClick={handleExportCSV}
-            aria-label="导出CSV分析数据"
-          >
-            📊 导出CSV分析
-          </button>
         </>
       )}
+
+      <div style={{ marginTop: "20px" }}>
+        <h4>Optimal Path</h4>
+        <p>{optimalSolution.path.join(" → ")}</p>
+      </div>
+
+      <div style={{ marginTop: "20px" }}>
+        <h4>Daily Schedule</h4>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9em" }}>
+          <thead>
+            <tr style={{ background: "#ddd" }}>
+              <th style={{ border: "1px solid #999", padding: "5px" }}>Day</th>
+              <th style={{ border: "1px solid #999", padding: "5px" }}>Weather</th>
+              <th style={{ border: "1px solid #999", padding: "5px" }}>Location</th>
+              <th style={{ border: "1px solid #999", padding: "5px" }}>Action</th>
+              <th style={{ border: "1px solid #999", padding: "5px" }}>Cash</th>
+              <th style={{ border: "1px solid #999", padding: "5px" }}>Water</th>
+              <th style={{ border: "1px solid #999", padding: "5px" }}>Food</th>
+            </tr>
+          </thead>
+          <tbody>
+            {optimalSolution.daily.map((day) => (
+              <tr key={day.day}>
+                <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "center" }}>{day.day}</td>
+                <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "center" }}>{day.weather}</td>
+                <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "center" }}>{day.location}</td>
+                <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "center" }}>{day.action}</td>
+                <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "right" }}>${day.cash.toFixed(2)}</td>
+                <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "right" }}>{day.invW.toFixed(2)}</td>
+                <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "right" }}>{day.invF.toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
-};
+}
+
+function DifferenceCharts({ optimal, player }: { optimal: DailyRecord[]; player: DailyRecord[] }) {
+  const maxDays = Math.min(optimal.length, player.length);
+
+  let cumulativeCash = 0;
+  let cumulativeWater = 0;
+  let cumulativeFood = 0;
+
+  const chartData = [];
+  for (let i = 0; i < maxDays; i++) {
+    const cashDiff = player[i].cash - optimal[i].cash;
+    const waterDiff = player[i].invW - optimal[i].invW;
+    const foodDiff = player[i].invF - optimal[i].invF;
+
+    cumulativeCash += cashDiff;
+    cumulativeWater += waterDiff;
+    cumulativeFood += foodDiff;
+
+    chartData.push({
+      day: optimal[i].day,
+      cashDiff,
+      waterDiff,
+      foodDiff,
+      cumulativeCash,
+      cumulativeWater,
+      cumulativeFood
+    });
+  }
+
+  return (
+    <div style={{ marginTop: "20px" }}>
+      <h4>Difference Charts (Player - Optimal)</h4>
+      <div style={{ marginBottom: "15px" }}>
+        <h5>Cash Difference</h5>
+        <SimpleBarChart data={chartData.map(d => ({ label: `Day ${d.day}`, value: d.cumulativeCash }))} color="#ff9800" />
+      </div>
+      <div style={{ marginBottom: "15px" }}>
+        <h5>Water Difference</h5>
+        <SimpleBarChart data={chartData.map(d => ({ label: `Day ${d.day}`, value: d.cumulativeWater }))} color="#2196f3" />
+      </div>
+      <div style={{ marginBottom: "15px" }}>
+        <h5>Food Difference</h5>
+        <SimpleBarChart data={chartData.map(d => ({ label: `Day ${d.day}`, value: d.cumulativeFood }))} color="#4caf50" />
+      </div>
+    </div>
+  );
+}
+
+function SimpleBarChart({ data, color }: { data: Array<{ label: string; value: number }>; color: string }) {
+  const maxValue = Math.max(...data.map(d => Math.abs(d.value)), 1);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "0.8em" }}>
+      {data.map((item, idx) => (
+        <div key={idx} style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+          <span style={{ width: "60px", textAlign: "right" }}>{item.label}:</span>
+          <div style={{ flex: 1, height: "20px", background: "#eee", position: "relative" }}>
+            <div
+              style={{
+                position: "absolute",
+                left: "50%",
+                width: `${(Math.abs(item.value) / maxValue) * 50}%`,
+                height: "100%",
+                background: color,
+                transform: item.value < 0 ? "translateX(-100%)" : "none"
+              }}
+            />
+            <span style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", lineHeight: "20px" }}>
+              {item.value.toFixed(2)}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MiningComparison({ optimal, player }: { optimal: DailyRecord[]; player: DailyRecord[] }) {
+  const optimalMining = optimal.filter(d => d.action === "MINE");
+  const playerMining = player.filter(d => d.action === "MINE");
+
+  return (
+    <div style={{ marginTop: "20px" }}>
+      <h4>Mining Comparison</h4>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9em" }}>
+        <thead>
+          <tr style={{ background: "#ddd" }}>
+            <th style={{ border: "1px solid #999", padding: "5px" }}>Category</th>
+            <th style={{ border: "1px solid #999", padding: "5px" }}>Optimal</th>
+            <th style={{ border: "1px solid #999", padding: "5px" }}>Player</th>
+            <th style={{ border: "1px solid #999", padding: "5px" }}>Difference</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style={{ border: "1px solid #ccc", padding: "5px" }}>Total Mining Days</td>
+            <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "center" }}>{optimalMining.length}</td>
+            <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "center" }}>{playerMining.length}</td>
+            <td style={{ border: "1px solid #ccc", padding: "5px", textAlign: "center" }}>{playerMining.length - optimalMining.length}</td>
+          </tr>
+          <tr>
+            <td style={{ border: "1px solid #ccc", padding: "5px" }}>Mining Days</td>
+            <td style={{ border: "1px solid #ccc", padding: "5px" }}>{optimalMining.map(d => d.day).join(", ")}</td>
+            <td style={{ border: "1px solid #ccc", padding: "5px" }}>{playerMining.map(d => d.day).join(", ")}</td>
+            <td style={{ border: "1px solid #ccc", padding: "5px" }}>-</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
