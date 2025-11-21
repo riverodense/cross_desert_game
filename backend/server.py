@@ -360,9 +360,11 @@ def solve_milp(payload: dict):
                     if key in m and (pulp.value(m[key]) or 0) > 0.5:
                         action = "MOVE"; moved_from = i; moved_to = j; break
                 if action == "MOVE": break
+        is_mining = False
         if action == "STAY":
             if (d, loc) in mine and (pulp.value(mine[(d,loc)]) or 0) > 0.5:
                 action = "MINE"
+                is_mining = True
         bw = sum(pulp.value(buyW[(d,i)]) or 0 for i in villages) if villages else 0
         bf = sum(pulp.value(buyF[(d,i)]) or 0 for i in villages) if villages else 0
         if bw>0 or bf>0:
@@ -375,7 +377,7 @@ def solve_milp(payload: dict):
         weight_peak = max(weight_peak, weight)
         daily.append({"day":d,"weather":weather[d-1],"location":loc,
                       "moved_from":moved_from,"moved_to":moved_to,
-                      "action":action,"buyW":bw,"buyF":bf,
+                      "action":action,"mine":is_mining,"buyW":bw,"buyF":bf,
                       "invW":invW,"invF":invF,"cash":cash})
     path = [next(i for i in V if (pulp.value(x[d][i]) or 0) > 0.5) for d in range(0, D+1)]
 

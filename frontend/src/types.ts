@@ -47,6 +47,7 @@ export interface DailyRecord {
   moved_from?:number;
   moved_to?:number;
   action:"MOVE"|"STAY"|"MINE";
+  mine:boolean;
   buyW:number;
   buyF:number;
   invW:number;
