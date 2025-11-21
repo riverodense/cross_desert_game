@@ -23,7 +23,8 @@ export const HexGrid: React.FC<{
   labels: Record<number, CellType>;
   setLabel: (id:number, next:CellType)=>void;
   path?: number[];
-}> = ({ labels, setLabel, path = [] }) => {
+  solutionEdges?: Array<[number, number]>;
+}> = ({ labels, setLabel, path = [], solutionEdges = [] }) => {
   const hexes = useMemo(()=>{
     const arr:{id:number,q:number,r:number}[] = [];
     for (let r=0;r<8;r++) for (let q=0;q<8;q++) arr.push({id:r*8+q+1,q,r});
@@ -37,8 +38,37 @@ export const HexGrid: React.FC<{
     return current==="Desert" ? "Village" : current==="Village" ? "Mine" : "Desert";
   }
 
+  // Build position map for edges
+  const posMap = useMemo(() => {
+    const map: Record<number, {x: number, y: number}> = {};
+    hexes.forEach(h => {
+      const {x, y} = toPixel(h.q, h.r, SIZE);
+      map[h.id] = {x, y};
+    });
+    return map;
+  }, [hexes]);
+
   return (
     <svg width={760} height={620} style={{ background:"#fafafa", border:"1px solid #e0e0e0", borderRadius:10 }}>
+      {/* Draw solution edges first (underneath) */}
+      {solutionEdges.map(([from, to], idx) => {
+        const start = posMap[from];
+        const end = posMap[to];
+        if (!start || !end) return null;
+        return (
+          <line 
+            key={`edge-${idx}`}
+            x1={start.x} 
+            y1={start.y} 
+            x2={end.x} 
+            y2={end.y}
+            stroke="#d32f2f"
+            strokeWidth={3}
+            opacity={0.6}
+          />
+        );
+      })}
+
       {hexes.map(h=>{
         const {x,y} = toPixel(h.q, h.r, SIZE);
         const pts = polygonPoints(x,y,SIZE);
@@ -66,6 +96,25 @@ export const HexGrid: React.FC<{
           </g>
         );
       })}
+      
+      {/* Draw day markers on solution path */}
+      {path.length > 1 && path.map((nodeId, day) => {
+        const pos = posMap[nodeId];
+        if (!pos || day === 0) return null;
+        return (
+          <text 
+            key={`day-${day}`}
+            x={pos.x + 14} 
+            y={pos.y - 10}
+            fontSize={9}
+            fill="#d32f2f"
+            fontWeight="bold"
+          >
+            D{day}
+          </text>
+        );
+      })}
+
       <text x={10} y={18} fontSize={12} fill="#555">点击：沙漠→村庄→矿山→沙漠（Shift=村庄，Alt=矿山）</text>
     </svg>
   );
